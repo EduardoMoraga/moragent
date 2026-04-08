@@ -1,0 +1,18 @@
+{
+  "description": "MORAGENT hooks — inject orchestration protocol into Claude Code sessions",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ${CLAUDE_PLUGIN_ROOT}/scripts/session-start.py",
+            "timeout": 5,
+            "statusMessage": "Loading MORAGENT..."
+          }
+        ]
+      }
+    ]
+  }
+}

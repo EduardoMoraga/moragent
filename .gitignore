@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+sesion-*.md
+.mcp.json
+*.egg-info/
+dist/
+build/
+.venv/

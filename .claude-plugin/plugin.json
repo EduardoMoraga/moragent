@@ -1,0 +1,10 @@
+{
+  "name": "moragent",
+  "description": "AI Agent Studio — Design, learn, and deploy agentic AI projects in Claude Code.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Eduardo Moraga"
+  },
+  "homepage": "https://github.com/EduardoMoraga/moragent",
+  "license": "MIT"
+}
