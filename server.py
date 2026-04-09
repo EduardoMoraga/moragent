@@ -1,6 +1,6 @@
 """
-MORAGENT MCP Server v2
-=======================
+MORAGENT MCP Server v2.0.0
+===========================
 AI Agent Studio — MCP server for Claude Code.
 Orchestration protocol + tools for designing, managing, and operating agentic AI projects.
 Runs via stdio transport (spawned by Claude Code).
@@ -22,6 +22,8 @@ Tools:
   Operate:
     moragent_quality_check  — Evaluate output quality before delivering
     moragent_find_references — Search previous projects for templates/examples
+    moragent_onboard        — Visual guided explanation of workspace
+    moragent_enrich         — Diagnose and improve agents/skills
 """
 import os
 import json
@@ -29,6 +31,28 @@ import glob as glob_mod
 from pathlib import Path
 from datetime import datetime
 from mcp.server.fastmcp import FastMCP
+
+__version__ = "2.0.0"
+
+# ── Constants ────────────────────────────────────────────────────────────────
+
+EXCLUDED_DIRS = {".claude", "engram", "node_modules", "__pycache__", ".git", ".venv", "dist", "build"}
+
+DELIVERABLE_EXTENSIONS = ["*.html", "*.xlsx", "*.pdf", "*.eml", "*.py"]
+
+VALID_MODELS = {"sonnet", "opus", "haiku"}
+
+VALID_ORCHESTRATIONS = {"subagents", "team", "hybrid"}
+
+MCP_KEYWORDS = {
+    "Gmail": ["email", "correo", "mail", "enviar"],
+    "Slack": ["slack", "notificar", "mensaje", "dm"],
+    "Asana": ["tarea", "task", "proyecto", "asana", "seguimiento"],
+    "Notion": ["notion", "documentar", "knowledge", "wiki", "hub"],
+    "Google Calendar": ["calendario", "calendar", "reunion", "meeting"],
+    "Jotform": ["formulario", "form", "encuesta", "survey"],
+    "SQL Server": ["sql", "base de datos", "database", "query", "etl"],
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ORCHESTRATION PROTOCOL (injected via MCP instructions)
@@ -85,6 +109,33 @@ def _user_agents(): return Path.home() / ".claude" / "agents"
 def _user_memory(): return Path.home() / ".claude" / "projects"
 
 # ══════════════════════════════════════════════════════════════════════════════
+# HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _read_safe(path: Path) -> str:
+    """Read a file with UTF-8 encoding, replacing errors. Returns empty string on failure."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, IOError):
+        return ""
+
+def _parse_frontmatter(content: str) -> dict[str, str]:
+    """Parse YAML-like frontmatter from markdown content."""
+    result = {}
+    in_fm = False
+    for line in content.split("\n"):
+        stripped = line.strip()
+        if stripped == "---":
+            if in_fm:
+                break
+            in_fm = True
+            continue
+        if in_fm and ":" in line:
+            key, _, value = line.partition(":")
+            result[key.strip()] = value.strip().strip('"').strip("'")
+    return result
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SCANNERS
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -93,28 +144,32 @@ def _scan_agents() -> list[dict]:
     for d, scope in [(_agents_dir(), "project"), (_user_agents(), "user")]:
         if d.exists():
             for f in sorted(d.glob("*.md")):
-                content = f.read_text(encoding="utf-8", errors="replace")
-                name = model = desc = ""
-                in_fm = False
+                content = _read_safe(f)
+                fm = _parse_frontmatter(content)
+                desc = ""
                 for line in content.split("\n"):
-                    if line.strip() == "---": in_fm = not in_fm; continue
-                    if in_fm:
-                        if line.startswith("name:"): name = line.split(":",1)[1].strip()
-                        elif line.startswith("model:"): model = line.split(":",1)[1].strip()
-                    elif line.startswith("# ") and not desc: desc = line[2:].strip()
-                agents.append({"name": name or f.stem, "model": model, "scope": scope, "description": desc, "path": str(f)})
+                    if line.startswith("# ") and not desc:
+                        desc = line[2:].strip()
+                agents.append({
+                    "name": fm.get("name", f.stem),
+                    "model": fm.get("model", ""),
+                    "scope": scope,
+                    "description": desc,
+                    "path": str(f),
+                })
     return agents
 
 def _scan_skills() -> list[dict]:
     skills = []
     if _skills_dir().exists():
         for f in sorted(_skills_dir().glob("*.md")):
-            content = f.read_text(encoding="utf-8", errors="replace")
-            name = desc = ""
-            for line in content.split("\n"):
-                if line.startswith("name:"): name = line.split(":",1)[1].strip()
-                elif line.startswith("description:"): desc = line.split(":",1)[1].strip()
-            skills.append({"name": name or f.stem, "description": desc, "path": str(f)})
+            content = _read_safe(f)
+            fm = _parse_frontmatter(content)
+            skills.append({
+                "name": fm.get("name", f.stem),
+                "description": fm.get("description", ""),
+                "path": str(f),
+            })
     return skills
 
 def _scan_memories() -> list[dict]:
@@ -123,7 +178,7 @@ def _scan_memories() -> list[dict]:
         for sub in sorted(_memory_dir().iterdir()):
             if sub.is_dir():
                 mf = sub / "MEMORY.md"
-                lines = len(mf.read_text(encoding="utf-8", errors="replace").splitlines()) if mf.exists() else 0
+                lines = len(_read_safe(mf).splitlines()) if mf.exists() else 0
                 memories.append({"agent": sub.name, "lines": lines, "has_memory": mf.exists()})
     return memories
 
@@ -132,14 +187,13 @@ def _scan_project_folders() -> list[dict]:
     projects = []
     ws = _cwd()
     for d in sorted(ws.iterdir()):
-        if d.is_dir() and (d / "CLAUDE.md").exists() and d.name not in [".claude", "engram", "node_modules", "__pycache__"]:
-            claude_md = (d / "CLAUDE.md").read_text(encoding="utf-8", errors="replace")
+        if d.is_dir() and (d / "CLAUDE.md").exists() and d.name not in EXCLUDED_DIRS:
+            claude_md = _read_safe(d / "CLAUDE.md")
             first_line = ""
             for line in claude_md.split("\n"):
                 if line.startswith("# "): first_line = line[2:].strip(); break
-            # Check for key deliverable files
             deliverables = []
-            for ext in ["*.html", "*.xlsx", "*.pdf", "*.eml", "*.py"]:
+            for ext in DELIVERABLE_EXTENSIONS:
                 deliverables.extend([f.name for f in d.rglob(ext) if ".git" not in str(f)])
             projects.append({
                 "name": d.name,
@@ -230,10 +284,15 @@ user_invocable: true
 {output}
 """
 
-COLORS = ["green","blue","cyan","yellow","magenta","red","purple"]
-_ci = 0
-def _nc():
-    global _ci; c = COLORS[_ci % len(COLORS)]; _ci += 1; return c
+COLORS = ["green", "blue", "cyan", "yellow", "magenta", "red", "purple"]
+_color_index = 0
+
+def _next_color() -> str:
+    """Return next color in the cycle for agent assignment."""
+    global _color_index
+    color = COLORS[_color_index % len(COLORS)]
+    _color_index += 1
+    return color
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LEARN CONTENT
@@ -614,12 +673,19 @@ def moragent_create_agent(
         overwrite: If true, replace existing agent file (useful for enriching scaffolded agents)
     """
     name = name.lower().strip().replace(" ", "-")
+    if not name:
+        return "Error: Agent name cannot be empty."
+    if model not in VALID_MODELS:
+        return f"Error: Invalid model '{model}'. Valid options: {', '.join(sorted(VALID_MODELS))}"
+    if scope not in ("project", "user"):
+        return f"Error: Invalid scope '{scope}'. Valid options: project, user"
+
     display = name.replace("-", " ").title()
     exp = "\n".join(f"- {e}" for e in (expertise or [role]))
     tls = "\n".join(f"- {t}" for t in (tools or ["Bash","Read","Write","Edit","Glob","Grep"]))
     extra = "- Puede trabajar en agent teams\n- Notificar al team lead al terminar" if team_ready else ""
 
-    content = AGENT_TPL.format(name=name, model=model, scope=scope, color=_nc(),
+    content = AGENT_TPL.format(name=name, model=model, scope=scope, color=_next_color(),
         display=display, description=role, role=role, expertise=exp, tools=tls, extra=extra)
 
     d = _agents_dir() if scope == "project" else _user_agents()
@@ -701,6 +767,11 @@ def moragent_scaffold_project(
         skills: List of skills [{"name":"x","description":"..."}]
         mcps: List of MCP connections needed
     """
+    if not project_name.strip():
+        return "Error: Project name cannot be empty."
+    if orchestration not in VALID_ORCHESTRATIONS:
+        return f"Error: Invalid orchestration '{orchestration}'. Valid options: {', '.join(sorted(VALID_ORCHESTRATIONS))}"
+
     folder = folder or project_name.lower().replace(" ", "-")[:30]
     target = _cwd() / folder
     target.mkdir(exist_ok=True)
@@ -754,7 +825,7 @@ def moragent_scaffold_project(
             if not expertise_items:
                 expertise_items = [f"- Especialista en {aname.replace('-', ' ')}"]
             af.write_text(AGENT_TPL.format(
-                name=aname, model=a.get("model","sonnet"), scope="project", color=_nc(),
+                name=aname, model=a.get("model","sonnet"), scope="project", color=_next_color(),
                 display=aname.replace("-"," ").title(),
                 role=role, expertise="\n".join(expertise_items),
                 tools="- Bash\n- Read\n- Write\n- Edit\n- Glob\n- Grep", extra=extra,
@@ -803,7 +874,7 @@ def moragent_scaffold_project(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TOOLS — OPERATE (NEW in v2)
+# TOOLS — OPERATE
 # ══════════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
@@ -836,8 +907,7 @@ def moragent_advisor(idea: str, industry: str = "", data_sources: str = "", outp
         agent_path = Path(a.get("path", ""))
         if agent_path.exists():
             try:
-                lines = agent_path.read_text(encoding="utf-8", errors="replace").split("\n")
-                # Find first meaningful paragraph (skip frontmatter)
+                lines = _read_safe(agent_path).split("\n")
                 in_fm = False
                 content_lines = []
                 for line in lines:
@@ -850,7 +920,7 @@ def moragent_advisor(idea: str, industry: str = "", data_sources: str = "", outp
                             break
                 if content_lines:
                     desc = " ".join(content_lines)
-            except Exception:
+            except (OSError, IOError):
                 pass
         agent_info += f" — {desc[:120]}" if desc else ""
         agents_inventory.append(agent_info)
@@ -866,17 +936,8 @@ def moragent_advisor(idea: str, industry: str = "", data_sources: str = "", outp
     ]
 
     # --- MCP recommendations ---
-    mcp_keywords = {
-        "Gmail": ["email", "correo", "mail", "enviar"],
-        "Slack": ["slack", "notificar", "mensaje", "dm"],
-        "Asana": ["tarea", "task", "proyecto", "asana", "seguimiento"],
-        "Notion": ["notion", "documentar", "knowledge", "wiki", "hub"],
-        "Google Calendar": ["calendario", "calendar", "reunion", "meeting"],
-        "Jotform": ["formulario", "form", "encuesta", "survey"],
-        "SQL Server": ["sql", "base de datos", "database", "query", "etl"],
-    }
     recommended_mcps = []
-    for mcp_name, keywords in mcp_keywords.items():
+    for mcp_name, keywords in MCP_KEYWORDS.items():
         if any(k in idea_lower for k in keywords):
             recommended_mcps.append(mcp_name)
     mcps_md = "\n".join(f"  - {m}" for m in recommended_mcps) if recommended_mcps else "  (sin MCPs detectados — agrega segun necesidad)"
@@ -1039,8 +1100,8 @@ def moragent_find_references(query: str, scope: str = "all") -> str:
     # Search project folders
     if scope in ("all", "projects"):
         for d in sorted(ws.iterdir()):
-            if d.is_dir() and (d / "CLAUDE.md").exists() and d.name not in [".claude", "engram", "node_modules"]:
-                claude_md = (d / "CLAUDE.md").read_text(encoding="utf-8", errors="replace").lower()
+            if d.is_dir() and (d / "CLAUDE.md").exists() and d.name not in EXCLUDED_DIRS:
+                claude_md = _read_safe(d / "CLAUDE.md").lower()
                 if query_lower in claude_md or query_lower in d.name.lower():
                     results.append(f"**PROJECT:** {d.name}/ — has CLAUDE.md matching '{query}'")
 
@@ -1060,14 +1121,14 @@ def moragent_find_references(query: str, scope: str = "all") -> str:
         if mem_dir.exists():
             for mf in mem_dir.rglob("*.md"):
                 try:
-                    content = mf.read_text(encoding="utf-8", errors="replace").lower()
-                    if query_lower in content:
-                        # Extract first meaningful line
-                        for line in mf.read_text(encoding="utf-8", errors="replace").split("\n"):
+                    content = _read_safe(mf)
+                    if query_lower in content.lower():
+                        for line in content.split("\n"):
                             if line.startswith("name:"):
                                 results.append(f"**MEMORY:** {line.split(':',1)[1].strip()} ({mf.name})")
                                 break
-                except: pass
+                except (OSError, IOError, UnicodeDecodeError):
+                    continue
 
     # Search agent memories
     if scope in ("all", "memories") and _memory_dir().exists():
@@ -1075,7 +1136,7 @@ def moragent_find_references(query: str, scope: str = "all") -> str:
             if sub.is_dir():
                 mf = sub / "MEMORY.md"
                 if mf.exists():
-                    content = mf.read_text(encoding="utf-8", errors="replace").lower()
+                    content = _read_safe(mf).lower()
                     if query_lower in content:
                         results.append(f"**AGENT MEMORY:** {sub.name} — mentions '{query}'")
 
@@ -1248,7 +1309,7 @@ def moragent_enrich(target: str, target_type: str = "agent") -> str:
         if not f.exists():
             return f"Skill '{target}' not found in .claude/skills/"
 
-    content = f.read_text(encoding="utf-8", errors="replace")
+    content = _read_safe(f)
     lines = content.split("\n")
     total_lines = len([l for l in lines if l.strip()])
 
