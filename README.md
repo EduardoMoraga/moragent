@@ -60,18 +60,19 @@ El instalador:
 
 ## Qué incluye
 
-### 10 herramientas MCP
+### 11 herramientas MCP
 
 | Herramienta | Qué hace |
 |---|---|
-| `moragent_advisor` | Describe tu idea → te recomienda agentes, orquestación, skills |
+| `moragent_advisor` | Describe tu idea → analiza tu infra y recomienda arquitectura |
 | `moragent_onboard` | Explica visualmente cómo funciona tu workspace |
 | `moragent_status` | Dashboard de toda tu infraestructura |
 | `moragent_quality_check` | Checklist de calidad antes de entregar |
 | `moragent_find_references` | Busca trabajo previo como referencia |
-| `moragent_create_agent` | Crea un agente especializado |
-| `moragent_create_skill` | Crea un procedimiento reutilizable |
+| `moragent_create_agent` | Crea un agente especializado (soporta overwrite) |
+| `moragent_create_skill` | Crea un procedimiento reutilizable (soporta overwrite) |
 | `moragent_scaffold_project` | Crea proyecto completo (CLAUDE.md + agentes + skills) |
+| `moragent_enrich` | Diagnostica agentes/skills débiles y guía su mejora |
 | `moragent_glossary` | 15 conceptos de IA agéntica con analogías |
 | `moragent_learn` | 7 lecciones interactivas |
 
@@ -88,6 +89,7 @@ Menú guiado con 8 opciones:
 6. Verificar calidad  — Checklist antes de entregar
 7. Buscar referencias — Trabajo previo como base
 8. Onboarding         — Cómo funciona todo
+9. Enriquecer         — Mejorar un agente o skill existente
 ```
 
 ## Conceptos clave (en 30 segundos)
