@@ -20,43 +20,29 @@ No necesitas saber programar. Solo necesitas Claude Code y escribir `/moragent`.
 ### Requisitos
 - [Claude Code](https://claude.ai/download) instalado
 - [Python 3.10+](https://python.org/downloads)
+- `pip install "mcp[cli]"`
 
-### Instalar (3 pasos)
+### Empezar (3 comandos)
 
 ```bash
-# 1. Descargar MORAGENT
 git clone https://github.com/EduardoMoraga/moragent.git
+cd moragent
+claude
+```
 
-# 2. Ir a tu proyecto (donde quieres usar agentes)
+Claude Code detecta automáticamente el MCP server y el skill `/moragent`. Solo escribe `/moragent` y listo.
+
+### Usar en un proyecto existente
+
+Si quieres instalar MORAGENT en otra carpeta:
+
+```bash
 cd mi-proyecto
-
-# 3. Instalar
-python ../moragent/install.py
+python /ruta/a/moragent/install.py
+claude
 ```
 
-El instalador:
-- Copia el server MCP a tu proyecto
-- Crea `.mcp.json` (Claude Code lo detecta automáticamente)
-- Crea `/moragent` como comando disponible
-
-### Instalar manualmente (sin script)
-
-1. Copia `server.py` a `tu-proyecto/moragent-plugin/server.py`
-2. Instala dependencia: `pip install "mcp[cli]"`
-3. Crea `tu-proyecto/.mcp.json`:
-```json
-{
-  "mcpServers": {
-    "moragent": {
-      "command": "python",
-      "args": ["moragent-plugin/server.py"],
-      "env": {"PYTHONUTF8": "1"}
-    }
-  }
-}
-```
-4. Copia `.claude/commands/moragent.md` a tu proyecto
-5. Abre Claude Code → acepta activar MORAGENT → escribe `/moragent`
+El instalador copia `server.py`, crea `.mcp.json` y registra `/moragent` en tu proyecto.
 
 ## Qué incluye
 
