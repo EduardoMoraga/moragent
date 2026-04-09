@@ -21,7 +21,7 @@ Dashboard de analisis de ventas para el equipo comercial. Integra datos de CRM (
 
 ## Data Sources
 - **Pipedrive API**: deals, actividades, pipeline stages
-- **SQL Server**: `BI_Increxa.sales.*` -- tablas de ventas historicas
+- **SQL Server**: `my_database.sales.*` -- tablas de ventas historicas
 - **CSV uploads**: datos de punto de venta (carga manual semanal)
 
 ## Deliverables

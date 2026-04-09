@@ -312,7 +312,7 @@ Imagina una empresa:
 
 ## Flujo de una tarea:
 ```
-Tu: "Necesito el reporte de Philips W14"
+Tu: "Necesito el reporte de ventas semana 14"
   |
   v
 CLAUDE.md (orquestador): lee instruccion, decide que agentes lanzar
@@ -327,7 +327,7 @@ Orquestador: consolida y entrega todo
 
 Cada agente lee 4 capas de contexto:
 1. CLAUDE.md (raiz) — contexto de empresa
-2. CLAUDE.md (carpeta cliente) — contexto de proyecto
+2. CLAUDE.md (carpeta proyecto) — contexto de proyecto
 3. agents/*.md — su identidad
 4. agent-memory/ — su experiencia""",
 
@@ -378,10 +378,10 @@ Tu --> Team Lead
 Una skill = una receta: ingredientes, pasos, resultado.
 
 ## Sin skill (50+ palabras cada vez):
-"Oye, necesito que vayas a la base de datos de Philips, busques el schema philips, corras el run_etl.bat..."
+"Oye, necesito que vayas a la base de datos del cliente, busques el schema de ventas, corras el run_etl.bat..."
 
 ## Con skill (4 palabras):
-/etl-run Philips W14
+/etl-run ClienteX W14
 
 ## Anatomia de una skill:
 ```
@@ -411,12 +411,12 @@ Filas cargadas, tiempo, warnings
 +--------------------------------------------------+
 |  CLAUDE.md (raiz)                                 |
 |  Contexto GLOBAL. Todos los agentes lo leen.      |
-|  "Somos Increxa, 8 clientes, SQL Server"          |
+|  "Somos una agencia, 8 clientes, SQL Server"      |
 |                                                    |
 |  +--------------------------------------------+   |
-|  |  CLAUDE.md (por cliente)                    |   |
+|  |  CLAUDE.md (por proyecto)                   |   |
 |  |  Contexto de PROYECTO. Solo en esa carpeta. |   |
-|  |  "Philips: schema philips, ETL weekly"      |   |
+|  |  "Cliente X: schema ventas, ETL weekly"     |   |
 |  |                                              |   |
 |  |  +--------------------------------------+   |   |
 |  |  |  agent-memory/MEMORY.md              |   |   |
@@ -1090,7 +1090,7 @@ def moragent_find_references(query: str, scope: str = "all") -> str:
     Use this BEFORE starting work to find relevant prior art. Never start from zero when past work exists.
 
     Args:
-        query: What to search for (e.g., "proposal", "dashboard Philips", "ETL report")
+        query: What to search for (e.g., "proposal", "dashboard", "ETL report")
         scope: Where to search — all, projects, memories, deliverables
     """
     results = []
@@ -1236,20 +1236,20 @@ def moragent_onboard() -> str:
 ## Como fluye una tarea
 
 ```
-Tu escribes: "Necesito el reporte de Philips W14"
+Tu escribes: "Necesito el reporte de ventas semana 14"
        |
        v
   CLAUDE.md (orquestador)
-  Lee: contexto global, clientes, tools
+  Lee: contexto global, proyectos, tools
        |
        v
-  Decide: lanzar subagente "bi-partner-analyst"
+  Decide: lanzar subagente "data-analyst"
        |
        v
   Subagente se activa:
     1. Lee CLAUDE.md (global)
-    2. Lee Philips/CLAUDE.md (proyecto)
-    3. Lee agents/bi-partner-analyst.md (su identidad)
+    2. Lee mi-proyecto/CLAUDE.md (proyecto)
+    3. Lee agents/data-analyst.md (su identidad)
     4. Lee agent-memory/ (su experiencia)
     5. Ejecuta la tarea
     6. Devuelve resultado al orquestador

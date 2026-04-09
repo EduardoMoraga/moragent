@@ -9,10 +9,10 @@ user_invocable: true
 Ejecuta el pipeline ETL semanal de un cliente. Identifica automaticamente los scripts, los corre en orden, valida los resultados y genera un resumen.
 
 ## Arguments
-- `$ARGUMENTS`: Nombre del cliente y semana (e.g., "Philips W14", "OPPO W15"). Si no se especifica, preguntar.
+- `$ARGUMENTS`: Nombre del proyecto y semana (e.g., "Acme W14", "Sales W15"). Si no se especifica, preguntar.
 
 ## Steps
-1. Identificar la carpeta del cliente en el workspace (e.g., `Philips/`, `Oppo/`)
+1. Identificar la carpeta del proyecto en el workspace (e.g., `acme/`, `sales/`)
 2. Leer el CLAUDE.md del cliente para entender el contexto y la estructura ETL
 3. Buscar el orquestador: `run_etl*.bat`, `run_etl*.ps1`, o `run_etl*.py`
 4. Si hay multiples scripts, leer el orquestador para determinar el orden de ejecucion
