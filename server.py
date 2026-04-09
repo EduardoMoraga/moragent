@@ -59,9 +59,15 @@ ORCHESTRATION_PROTOCOL = """MORAGENT AI Agent Studio — tools for designing and
 - Assign model by complexity: opus for architecture/complex code, sonnet for routine/analysis, haiku for classification
 - Always create agent memory directory
 
+### AFTER scaffolding a project:
+1. Call `moragent_enrich` on each created agent to check quality
+2. If enrich flags issues (GENERICO, MUY CORTO, FALTA), fix them before the user starts working
+3. Rich agents produce better results than many thin agents
+
 ### WHEN the user asks to learn or understand concepts:
 - Use `moragent_glossary` for single concepts
-- Use `moragent_learn` for comprehensive lessons with diagrams and examples"""
+- Use `moragent_learn` for comprehensive lessons with diagrams and examples
+- Use `moragent_templates` to show available project templates"""
 
 # ══════════════════════════════════════════════════════════════════════════════
 # INIT
@@ -225,10 +231,253 @@ user_invocable: true
 {output}
 """
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PROJECT TEMPLATES — pre-built configurations for common use cases
+# ══════════════════════════════════════════════════════════════════════════════
+
+PROJECT_TEMPLATES = {
+    "content-lab": {
+        "name": "Laboratorio de Contenido",
+        "description": "Infraestructura para investigacion academica + creacion de contenido (LinkedIn, blog, revista). Incluye investigador, redactor e ingeniero de datos.",
+        "orchestration": "subagents",
+        "agents": [
+            {
+                "name": "research-scholar",
+                "model": "opus",
+                "role": "Investigador academico. Busca papers, extrae estadisticas, sintetiza hallazgos con fuentes verificables.",
+                "expertise": [
+                    "Busqueda sistematica de papers en Google Scholar, SSRN, ArXiv",
+                    "Extraccion de estadisticas con fuente, autor, año y journal",
+                    "Sintesis de hallazgos en formato de briefing estructurado",
+                    "Conexiones interdisciplinarias entre campos",
+                ],
+                "tools": ["WebSearch", "WebFetch", "Read", "Write", "Bash", "Glob", "Grep"],
+            },
+            {
+                "name": "content-writer",
+                "model": "opus",
+                "role": "Redactor de divulgacion. Escribe contenido ensayistico fundamentado en datos, en la voz del autor.",
+                "expertise": [
+                    "Redaccion de divulgacion cientifica accesible",
+                    "Storytelling basado en datos y referencias academicas",
+                    "Formato LinkedIn long-form (800-1500 palabras)",
+                    "Formato nota editorial (2000-3500 palabras)",
+                    "Integracion de referencias APA en prosa",
+                ],
+                "tools": ["Read", "Write", "Edit", "WebSearch", "WebFetch", "Glob", "Grep"],
+            },
+            {
+                "name": "data-project-engineer",
+                "model": "sonnet",
+                "role": "Ingeniero de datos. Diseña y construye proyectos reproducibles con datos abiertos para GitHub.",
+                "expertise": [
+                    "Python: pandas, numpy, scipy, matplotlib, seaborn, plotly",
+                    "Jupyter Notebooks de calidad publicable",
+                    "APIs de datos abiertos: World Bank, OECD, Kaggle, datos.gob",
+                    "Econometria aplicada y machine learning",
+                    "Git/GitHub: README profesional, estructura de repositorio",
+                ],
+                "tools": ["Bash", "Read", "Write", "Edit", "WebSearch", "WebFetch", "Glob", "Grep"],
+            },
+        ],
+        "skills": [
+            {
+                "name": "research-brief",
+                "description": "Busqueda sistematica de papers y sintesis de hallazgos",
+                "steps": [
+                    "Buscar papers recientes (ultimos 2-3 años) con WebSearch en Google Scholar y SSRN",
+                    "Leer abstracts y hallazgos clave de al menos 5-8 papers relevantes",
+                    "Extraer estadisticas concretas: porcentajes, tamaños de efecto, tamaños de muestra",
+                    "Identificar tensiones: donde la evidencia contradice la intuicion",
+                    "Conectar campos: buscar puentes interdisciplinarios",
+                    "Buscar datos especificos del pais/region del autor",
+                    "Escribir briefing con formato: hallazgo principal, tabla de papers, stats citables, conexiones, angulos",
+                    "Guardar en research/[tema-kebab].md",
+                ],
+                "arguments": "Tema a investigar (ej: 'nudges algoritmicos en e-commerce')",
+                "output": "Briefing en markdown con papers verificados, estadisticas con fuente y URL, y angulos para publicacion",
+            },
+            {
+                "name": "linkedin-post",
+                "description": "Post LinkedIn 800-1500 palabras fundamentado en datos",
+                "steps": [
+                    "Leer el research brief correspondiente al tema",
+                    "Leer 2-3 notas previas del autor para calibrar voz y estilo",
+                    "Definir gancho de apertura: escena, dato impactante o pregunta provocadora",
+                    "Desarrollar 3-4 secciones con datos y referencias intercaladas",
+                    "Cerrar con reflexion abierta, no con receta ni tips",
+                    "Verificar que toda estadistica tenga fuente real",
+                    "Guardar en content/linkedin/[YYYY-MM-DD]-[tema].md",
+                ],
+                "arguments": "Tema o 'desde research-brief [nombre]'",
+                "output": "Post LinkedIn en markdown, 800-1500 palabras, con datos verificados",
+            },
+            {
+                "name": "editorial-note",
+                "description": "Nota editorial 2000-3500 palabras con rigor academico",
+                "steps": [
+                    "Obtener investigacion: leer research brief o ejecutar /research-brief primero",
+                    "Leer notas previas del autor para calibrar nivel y tono",
+                    "Definir estructura: apertura (300-500 pal), desarrollo (1000-2000), giro (300-500), cierre (200-300)",
+                    "Escribir borrador con minimo 8 referencias y 10 estadisticas con fuente",
+                    "Incluir al menos 1 tabla comparativa",
+                    "Verificar checklist: extension, referencias, estadisticas, nivel, tablas, cierre reflexivo",
+                    "Guardar en content/editorial/[YYYY-MM-DD]-[tema].md",
+                ],
+                "arguments": "Tema o 'desde research-brief [nombre]'",
+                "output": "Nota editorial completa con referencias APA",
+            },
+            {
+                "name": "editorial-calendar",
+                "description": "Calendario editorial semanal/mensual con temas y formatos",
+                "steps": [
+                    "Revisar pilares tematicos del proyecto",
+                    "Buscar temas trending en la interseccion de los pilares",
+                    "Cruzar con notas previas del autor para continuidad narrativa",
+                    "Asignar formato por dia: research brief, post, proyecto datos, nota editorial",
+                    "Definir titulo tentativo, angulo y fuentes para cada pieza",
+                    "Guardar en content/calendar/[YYYY]-W[NN]-calendar.md",
+                ],
+                "arguments": "Semana (ej: 'semana 16') o 'mensual abril'",
+                "output": "Calendario con tema central, hilo narrativo y tabla dia-por-dia",
+            },
+        ],
+        "folders": ["research", "content/linkedin", "content/editorial", "content/calendar", "projects"],
+    },
+
+    "etl-pipeline": {
+        "name": "ETL Pipeline",
+        "description": "Pipeline de extraccion, transformacion y carga de datos para reporteria y dashboards. Incluye ingeniero ETL, analista BI y generador de reportes.",
+        "orchestration": "subagents",
+        "agents": [
+            {
+                "name": "etl-engineer",
+                "model": "sonnet",
+                "role": "Ingeniero ETL. Diseña y mantiene pipelines de datos: extraccion, limpieza, transformacion y carga a SQL Server.",
+                "expertise": [
+                    "Python: pandas, sqlalchemy, pyodbc para ETL",
+                    "SQL Server: bulk insert, stored procedures, schemas",
+                    "Manejo de archivos CSV, Excel, JSON, APIs REST",
+                    "Automatizacion con .bat/.ps1 para ejecucion programada",
+                    "Validacion de datos: tipos, nulos, duplicados, rangos",
+                    "Logging y manejo de errores en pipelines",
+                ],
+                "tools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
+            },
+            {
+                "name": "bi-analyst",
+                "model": "sonnet",
+                "role": "Analista BI. Diseña modelos de datos, KPIs y queries para reporteria.",
+                "expertise": [
+                    "Modelado dimensional: estrella, snowflake, DIM/FACT",
+                    "SQL avanzado: CTEs, window functions, pivots",
+                    "KPIs de retail: disponibilidad, sell-out, stock, cobertura",
+                    "Power BI: medidas DAX, relaciones, visualizaciones",
+                ],
+                "tools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
+            },
+            {
+                "name": "report-generator",
+                "model": "sonnet",
+                "role": "Generador de reportes. Crea dashboards HTML, reportes automaticos y visualizaciones.",
+                "expertise": [
+                    "HTML/CSS para dashboards profesionales responsive",
+                    "Python: matplotlib, seaborn, plotly para graficos",
+                    "Templates Jinja2 para reportes automatizados",
+                    "Exportacion a Excel con formato profesional (openpyxl)",
+                ],
+                "tools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
+            },
+        ],
+        "skills": [
+            {
+                "name": "etl-run",
+                "description": "Ejecutar pipeline ETL semanal de un cliente",
+                "steps": [
+                    "Identificar cliente y semana desde $ARGUMENTS",
+                    "Verificar que los archivos fuente existen en la carpeta esperada",
+                    "Ejecutar scripts de extraccion en orden",
+                    "Validar datos: conteo de filas, nulos, tipos",
+                    "Cargar a SQL Server",
+                    "Generar resumen: filas cargadas, tiempo, warnings",
+                ],
+                "arguments": "Cliente y semana (ej: 'Philips W14')",
+                "output": "Resumen de ejecucion con filas cargadas, errores y tiempo",
+            },
+            {
+                "name": "data-quality",
+                "description": "Verificacion de calidad de datos post-carga",
+                "steps": [
+                    "Conectar a SQL Server y ejecutar queries de validacion",
+                    "Verificar conteos por dimension (fecha, tienda, producto)",
+                    "Detectar anomalias: valores atipicos, tendencias rotas",
+                    "Comparar con semana anterior para detectar caidas",
+                    "Generar reporte de calidad con semaforo (verde/amarillo/rojo)",
+                ],
+                "arguments": "Schema y tabla a validar",
+                "output": "Reporte de calidad con metricas y alertas",
+            },
+        ],
+        "folders": ["data/raw", "data/processed", "scripts", "reports", "sql"],
+    },
+
+    "data-analysis": {
+        "name": "Proyecto de Analisis de Datos",
+        "description": "Proyecto de data science reproducible para GitHub: hipotesis, datos abiertos, analisis estadistico y visualizaciones publicables.",
+        "orchestration": "subagents",
+        "agents": [
+            {
+                "name": "data-scientist",
+                "model": "opus",
+                "role": "Cientifico de datos. Diseña metodologia, ejecuta analisis estadisticos y produce hallazgos con rigor academico.",
+                "expertise": [
+                    "Python: pandas, numpy, scipy, statsmodels, scikit-learn",
+                    "Econometria: regresion, inferencia causal, diff-in-diff",
+                    "Machine learning: random forest, XGBoost, redes neuronales",
+                    "Estadistica: tests de hipotesis, intervalos de confianza, bootstrapping",
+                    "Visualizacion: matplotlib, seaborn, plotly con estilo publicable",
+                ],
+                "tools": ["Bash", "Read", "Write", "Edit", "WebSearch", "WebFetch", "Glob", "Grep"],
+            },
+        ],
+        "skills": [
+            {
+                "name": "explore-data",
+                "description": "Exploracion inicial de un dataset: estructura, tipos, distribuciones, correlaciones",
+                "steps": [
+                    "Cargar dataset y mostrar shape, dtypes, primeras filas",
+                    "Calcular estadisticas descriptivas por variable",
+                    "Identificar valores faltantes y su patron",
+                    "Generar histogramas y boxplots de variables clave",
+                    "Calcular matriz de correlaciones",
+                    "Guardar notebook de exploracion",
+                ],
+                "arguments": "Ruta al dataset o nombre del proyecto",
+                "output": "Notebook de exploracion con visualizaciones y hallazgos iniciales",
+            },
+        ],
+        "folders": ["data/raw", "data/processed", "notebooks", "src", "outputs/figures"],
+    },
+}
+
 COLORS = ["green","blue","cyan","yellow","magenta","red","purple"]
 _ci = 0
 def _nc():
     global _ci; c = COLORS[_ci % len(COLORS)]; _ci += 1; return c
+
+def _match_template(idea_lower: str) -> str:
+    """Suggest the best template based on idea keywords."""
+    scores = {}
+    template_keywords = {
+        "content-lab": ["contenido", "content", "linkedin", "blog", "publicar", "editorial", "investigacion", "research", "divulgacion", "articulo", "paper", "revista"],
+        "etl-pipeline": ["etl", "pipeline", "sql", "datos", "data", "reporte", "report", "dashboard", "bi", "warehouse", "carga", "extraccion"],
+        "data-analysis": ["analisis", "analysis", "ciencia de datos", "data science", "kaggle", "jupyter", "notebook", "estadistica", "machine learning", "ml", "modelo", "prediccion"],
+    }
+    for tpl_name, keywords in template_keywords.items():
+        scores[tpl_name] = sum(1 for k in keywords if k in idea_lower)
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else "content-lab"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LEARN CONTENT
@@ -681,6 +930,7 @@ def moragent_scaffold_project(
     description: str,
     folder: str = "",
     orchestration: str = "subagents",
+    template: str = "",
     agents: list[dict] | None = None,
     skills: list[dict] | None = None,
     mcps: list[str] | None = None,
@@ -692,10 +942,22 @@ def moragent_scaffold_project(
         description: What the project does
         folder: Folder name (auto-generated from project_name if empty)
         orchestration: subagents, team, or hybrid
+        template: Use a pre-built template — content-lab, etl-pipeline, or data-analysis. Leave empty for custom.
         agents: List of agents [{"name":"x","model":"sonnet","role":"..."}]
         skills: List of skills [{"name":"x","description":"..."}]
         mcps: List of MCP connections needed
     """
+    # Apply template if specified
+    if template and template in PROJECT_TEMPLATES:
+        tpl = PROJECT_TEMPLATES[template]
+        orchestration = orchestration or tpl.get("orchestration", "subagents")
+        agents = agents or tpl.get("agents", [])
+        skills = skills or tpl.get("skills", [])
+        description = description or tpl.get("description", "")
+        # Create template-specific folders
+        for fld in tpl.get("folders", []):
+            ((_cwd() / (folder or project_name.lower().replace(" ", "-")[:30])) / fld).mkdir(parents=True, exist_ok=True)
+
     folder = folder or project_name.lower().replace(" ", "-")[:30]
     target = _cwd() / folder
     target.mkdir(exist_ok=True)
@@ -785,11 +1047,14 @@ def moragent_scaffold_project(
             ), encoding="utf-8")
             created_skills += 1
 
+    tpl_info = f"- **Template:** {template}\n" if template else ""
     return (f"# Project Scaffolded: {project_name}\n\n"
             f"- **Folder:** {folder}/\n- **CLAUDE.md:** {folder}/CLAUDE.md\n"
+            f"{tpl_info}"
             f"- **Agents created:** {created_agents}\n- **Skills created:** {created_skills}\n"
             f"- **Orchestration:** {orchestration}\n\n"
-            f"Open Claude Code in `{folder}/` to start working.")
+            f"Open Claude Code in `{folder}/` to start working.\n\n"
+            f"**Tip:** Use `moragent_enrich` to upgrade any agent or skill with richer content.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -813,62 +1078,51 @@ def moragent_advisor(idea: str, industry: str = "", data_sources: str = "", outp
     projects = _scan_project_folders()
 
     idea_lower = idea.lower()
-    idea_words = set(idea_lower.split())
-    # Remove stop words for better matching
-    stop_words = {"de", "la", "el", "los", "las", "un", "una", "para", "con", "en", "del", "al", "que", "y", "o", "a", "the", "for", "and", "with", "to"}
-    idea_words = idea_words - stop_words
 
-    # --- Smart matching: find reusable agents ---
-    reusable = []
+    # --- Build full inventory for Claude to evaluate ---
+    # Instead of naive keyword matching, we present ALL agents with their descriptions
+    # and let Claude (which is intelligent) decide what's relevant.
+
+    agents_inventory = []
     for a in agents:
-        name_words = set(a["name"].replace("-", " ").split()) - stop_words
-        desc_words = set(a.get("description", "").lower().split()) - stop_words
-        all_words = name_words | desc_words
-        # Also read agent file for deeper matching if description is short
+        agent_info = f"  - **{a['name']}** ({a['model']}, {a['scope']})"
+        desc = a.get("description", "")
+        # Read first 3 lines of agent file for richer context
         agent_path = Path(a.get("path", ""))
-        if agent_path.exists() and len(desc_words) < 5:
+        if agent_path.exists():
             try:
-                content_words = set(agent_path.read_text(encoding="utf-8", errors="replace").lower().split()[:200]) - stop_words
-                all_words |= content_words
-            except: pass
-        overlap = idea_words & all_words
-        # Require at least 2 word overlap to avoid false matches
-        # (e.g. "brand-architect" matching "research" just because both mention "proyecto")
-        if len(overlap) >= 2:
-            reusable.append({**a, "_match_score": len(overlap), "_matched": overlap})
+                lines = agent_path.read_text(encoding="utf-8", errors="replace").split("\n")
+                # Find first meaningful paragraph (skip frontmatter)
+                in_fm = False
+                content_lines = []
+                for line in lines:
+                    if line.strip() == "---":
+                        in_fm = not in_fm
+                        continue
+                    if not in_fm and line.strip() and not line.startswith("#"):
+                        content_lines.append(line.strip())
+                        if len(content_lines) >= 2:
+                            break
+                if content_lines:
+                    desc = " ".join(content_lines)
+            except Exception:
+                pass
+        agent_info += f" — {desc[:120]}" if desc else ""
+        agents_inventory.append(agent_info)
 
-    # Sort by match score, only keep top 3 most relevant
-    reusable.sort(key=lambda x: x.get("_match_score", 0), reverse=True)
-    reusable = reusable[:3]
+    skills_inventory = [
+        f"  - **/{s['name']}** — {s.get('description', '')[:80]}"
+        for s in skills
+    ]
 
-    # --- Smart matching: find reusable skills ---
-    reusable_skills = []
-    for s in skills:
-        s_words = set(s["name"].replace("-", " ").split()) | set(s.get("description", "").lower().split())
-        if idea_words & s_words:
-            reusable_skills.append(s)
+    projects_inventory = [
+        f"  - **{p['name']}/** — {p.get('title', '')}"
+        for p in projects
+    ]
 
-    # --- Similar projects ---
-    similar = []
-    for p in projects:
-        p_words = set(p["name"].lower().split()) | set(p.get("title", "").lower().split())
-        if idea_words & p_words:
-            similar.append(p)
-
-    # --- Orchestration recommendation ---
-    complexity_signals = {
-        "high": ["portal", "plataforma", "platform", "full-stack", "chatbot", "multi-fase", "investigar"],
-        "low": ["reporte", "report", "etl", "dashboard", "analisis", "ruta", "route", "encuesta"],
-    }
-    is_complex = any(w in idea_lower for w in complexity_signals["high"])
-    is_simple = any(w in idea_lower for w in complexity_signals["low"])
-
-    if is_complex and not is_simple:
-        orch_rec = "hybrid"
-        orch_why = "El proyecto tiene multiples fases interdependientes. Subagentes para tareas independientes + team para fases que requieren colaboracion."
-    else:
-        orch_rec = "subagents"
-        orch_why = "Las tareas son independientes entre si. Cada agente reporta al orquestador, mas barato y predecible."
+    # --- Template suggestion ---
+    suggested_template = _match_template(idea_lower)
+    tpl_info = PROJECT_TEMPLATES.get(suggested_template, {})
 
     # --- MCP recommendations ---
     mcp_keywords = {
@@ -884,29 +1138,6 @@ def moragent_advisor(idea: str, industry: str = "", data_sources: str = "", outp
     for mcp_name, keywords in mcp_keywords.items():
         if any(k in idea_lower for k in keywords):
             recommended_mcps.append(mcp_name)
-
-    # --- Build response ---
-    reusable_md = "\n".join(
-        f"  - **{a['name']}** ({a['model']}) — REUSAR. Ya existe y cubre parte del scope."
-        for a in reusable
-    ) if reusable else "  (ningun agente existente matchea directamente)"
-
-    new_agents_needed = ""
-    if not reusable:
-        new_agents_needed = "  - Necesitaras crear agentes nuevos. Usa `moragent_create_agent` o `/moragent crear agente`."
-    elif len(reusable) < 2:
-        new_agents_needed = "  - Considera crear 1-2 agentes adicionales para cubrir gaps."
-
-    reusable_skills_md = "\n".join(
-        f"  - **/{s['name']}** — {s['description'][:60]}"
-        for s in reusable_skills
-    ) if reusable_skills else "  (ninguna skill existente matchea)"
-
-    similar_md = "\n".join(
-        f"  - **{p['name']}/** — {p['title']}. Revisar como referencia."
-        for p in similar
-    ) if similar else "  (sin proyectos similares previos)"
-
     mcps_md = "\n".join(f"  - {m}" for m in recommended_mcps) if recommended_mcps else "  (sin MCPs detectados — agrega segun necesidad)"
 
     return f"""# MORAGENT Advisor — Recomendacion de Arquitectura
@@ -919,39 +1150,58 @@ def moragent_advisor(idea: str, industry: str = "", data_sources: str = "", outp
 
 ---
 
-## 1. AGENTES — Reusar vs Crear
+## 1. INVENTARIO ACTUAL — Tu infraestructura existente
 
-**Agentes existentes que puedes reusar ({len(reusable)}/{len(agents)}):**
-{reusable_md}
+**IMPORTANTE para Claude:** Revisa cada agente y skill abajo. Solo recomienda REUSAR un agente si su rol es DIRECTAMENTE relevante para el proyecto. No reusar por coincidencia de palabras — evalua si el agente realmente sirve para esta idea.
 
-{new_agents_needed}
+### Agentes ({len(agents)}):
+{chr(10).join(agents_inventory) if agents_inventory else '  (sin agentes — se crearan nuevos)'}
 
-**Total en tu infra:** {len(agents)} agentes, {sum(1 for m in memories if m['has_memory'] and m['lines']>0)} con memoria activa.
+### Skills ({len(skills)}):
+{chr(10).join(skills_inventory) if skills_inventory else '  (sin skills)'}
 
-## 2. ORQUESTACION — {orch_rec.upper()}
+### Proyectos con CLAUDE.md ({len(projects)}):
+{chr(10).join(projects_inventory) if projects_inventory else '  (sin proyectos previos)'}
 
-**Recomendacion:** `{orch_rec}`
-**Por que:** {orch_why}
+### Memorias activas: {sum(1 for m in memories if m['has_memory'] and m['lines']>0)}
 
-| Modo | Cuando usarlo |
-|---|---|
-| subagents | Tareas independientes (ETL, reporte, dashboard) — **90% de los casos** |
-| team | Colaboracion real entre agentes (code review, investigacion) |
-| hybrid | Subagentes para rutina + team para fases complejas |
+## 2. TEMPLATE SUGERIDO: `{suggested_template}`
 
-## 3. SKILLS EXISTENTES
+**{tpl_info.get('name', '')}**: {tpl_info.get('description', '')}
 
-{reusable_skills_md}
+Agentes incluidos en template:
+{chr(10).join(f"  - **{a['name']}** ({a.get('model','sonnet')}) — {a.get('role','')}" for a in tpl_info.get('agents', []))}
+
+Skills incluidos en template:
+{chr(10).join(f"  - **/{s['name']}** — {s.get('description','')}" for s in tpl_info.get('skills', []))}
+
+Templates disponibles: {', '.join(f'`{k}`' for k in PROJECT_TEMPLATES.keys())}
+
+Para usar: `moragent_scaffold_project(template="{suggested_template}", ...)`
+
+## 3. ORQUESTACION
+
+| Modo | Cuando usarlo | Costo |
+|---|---|---|
+| subagents | Tareas independientes (ETL, reporte, dashboard) — **90% de los casos** | Bajo |
+| team | Colaboracion real entre agentes (investigacion + redaccion) | Alto (~3x) |
+| hybrid | Subagentes para rutina + team para fases complejas | Variable |
+
+**Para Claude:** Evalua si el proyecto necesita que los agentes se comuniquen entre si (team) o si cada uno puede trabajar independientemente (subagents). La mayoria de proyectos funciona bien con subagents.
 
 ## 4. CONEXIONES MCP RECOMENDADAS
 
 {mcps_md}
 
-## 5. PROYECTOS SIMILARES (referencias)
+## 6. TEMPLATES DISPONIBLES
 
-{similar_md}
+Si alguno encaja, puedes usarlo como base (ya incluye agentes, skills y carpetas pre-configurados):
 
-## 6. FASES SUGERIDAS
+{chr(10).join(f'- **{k}**: {v["description"]}' for k, v in PROJECT_TEMPLATES.items())}
+
+Para usar un template: `moragent_scaffold_project` con `template="{_match_template(idea_lower)}"` (o sin template para configuracion custom).
+
+## 7. FASES SUGERIDAS
 
 1. **Setup** — Crear estructura (CLAUDE.md, agentes, skills, memoria)
 2. **Desarrollo** — Implementar logica core del proyecto
@@ -1253,6 +1503,172 @@ Tu escribes: "Necesito el reporte de Philips W14"
 
 Todo esta conectado. Cada vez que crees algo con MORAGENT, se integra automaticamente a tu workspace.
 """
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TOOLS — ENRICH (upgrade existing agents/skills)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def moragent_enrich(target: str, target_type: str = "agent") -> str:
+    """Analyze an existing agent or skill and return a diagnosis of what's missing or weak,
+    with specific instructions for Claude to enrich it.
+
+    Args:
+        target: Name of the agent or skill to enrich (e.g., "data-analyst" or "etl-run")
+        target_type: "agent" or "skill"
+    """
+    if target_type == "agent":
+        f = _agents_dir() / f"{target}.md"
+        if not f.exists():
+            f = _user_agents() / f"{target}.md"
+        if not f.exists():
+            return f"Agent '{target}' not found in .claude/agents/ or ~/.claude/agents/"
+    else:
+        f = _skills_dir() / f"{target}.md"
+        if not f.exists():
+            return f"Skill '{target}' not found in .claude/skills/"
+
+    content = f.read_text(encoding="utf-8", errors="replace")
+    lines = content.split("\n")
+    total_lines = len([l for l in lines if l.strip()])
+
+    # Analyze what sections exist
+    sections = set()
+    for line in lines:
+        if line.startswith("## "):
+            sections.add(line[3:].strip().lower())
+
+    # Detect quality issues
+    issues = []
+    suggestions = []
+
+    if target_type == "agent":
+        expected_sections = {
+            "identity": "Quien es este agente, su personalidad y enfoque",
+            "expertise": "Lista detallada de areas de conocimiento (minimo 5)",
+            "working protocol": "Pasos que sigue al recibir una tarea",
+            "tools": "Herramientas que puede usar",
+            "rules": "Reglas y restricciones",
+        }
+        optional_sections = {
+            "team collaboration": "Como interactua con otros agentes (si es team_ready)",
+            "output format": "Formato estandar de sus entregas",
+            "references": "Fuentes, autores o recursos de referencia",
+        }
+
+        for section, desc in expected_sections.items():
+            if section not in sections:
+                issues.append(f"FALTA seccion `## {section.title()}` — {desc}")
+
+        # Check if expertise is rich enough
+        expertise_lines = []
+        in_expertise = False
+        for line in lines:
+            if line.startswith("## ") and "expertise" in line.lower():
+                in_expertise = True
+                continue
+            if line.startswith("## ") and in_expertise:
+                break
+            if in_expertise and line.strip().startswith("- "):
+                expertise_lines.append(line)
+        if len(expertise_lines) < 3:
+            issues.append(f"DEBIL: Expertise tiene solo {len(expertise_lines)} items (recomendado: 5+)")
+
+        # Check if identity is generic
+        has_generic_identity = any("agente especializado" in line.lower() and "tu rol" in line.lower() for line in lines)
+        if has_generic_identity:
+            issues.append("GENERICO: Identity usa texto de template ('agente especializado... Tu rol:'). Necesita personalidad y contexto real.")
+
+        # Check team_ready
+        is_team = "team_ready: true" in content or "team collaboration" in sections
+        if is_team and "team collaboration" not in sections:
+            issues.append("FALTA: Agente es team_ready pero no tiene seccion ## Team Collaboration")
+
+        for section, desc in optional_sections.items():
+            if section not in sections:
+                suggestions.append(f"OPCIONAL: Agregar `## {section.title()}` — {desc}")
+
+        if total_lines < 30:
+            issues.append(f"MUY CORTO: Solo {total_lines} lineas no vacias. Un agente bien configurado tiene 60-120.")
+
+    else:  # skill
+        expected_sections = {"argumentos", "pasos", "output"}
+        for section in expected_sections:
+            if section not in sections:
+                issues.append(f"FALTA seccion `## {section.title()}`")
+
+        # Check if steps are generic
+        has_define_steps = "(define steps)" in content or "(define output)" in content
+        if has_define_steps:
+            issues.append("GENERICO: Los pasos dicen '(define steps)' — necesitan contenido real y detallado")
+
+        # Count steps
+        step_count = sum(1 for line in lines if line.strip() and line.strip()[0].isdigit() and ". " in line)
+        if step_count < 3:
+            issues.append(f"POCOS PASOS: Solo {step_count} pasos. Una skill util tiene 5-8.")
+
+        if total_lines < 15:
+            issues.append(f"MUY CORTO: Solo {total_lines} lineas no vacias.")
+
+    # Build response
+    status = "NECESITA TRABAJO" if issues else "BIEN CONFIGURADO"
+    issues_md = "\n".join(f"- {i}" for i in issues) if issues else "- Ninguno detectado"
+    suggestions_md = "\n".join(f"- {s}" for s in suggestions) if suggestions else "- Ninguna"
+
+    return f"""# MORAGENT Enrich — Diagnostico de {target_type}: `{target}`
+
+## Estado: {status}
+**Lineas:** {total_lines} | **Secciones:** {', '.join(sorted(sections)) or 'ninguna'}
+
+## Problemas detectados
+{issues_md}
+
+## Sugerencias opcionales
+{suggestions_md}
+
+## Instrucciones para Claude
+
+**Lee el archivo `{f}` y enriquecelo** aplicando estos cambios:
+
+{chr(10).join(f'{i+1}. Resolver: {issue}' for i, issue in enumerate(issues))}
+
+{"Usa `moragent_create_agent` con `overwrite=true` para reemplazar, o edita el archivo directamente con Edit." if target_type == "agent" else "Usa `moragent_create_skill` con `overwrite=true` para reemplazar, o edita el archivo directamente con Edit."}
+
+**Referencia de calidad:** Un {target_type} bien configurado tiene:
+{'''- Identity con personalidad y contexto (no generico)
+- Expertise con 5-10 areas especificas
+- Working Protocol con pasos numerados
+- Rules con al menos 5 reglas claras
+- 60-120 lineas totales''' if target_type == 'agent' else '''- 5-8 pasos detallados y accionables
+- Argumentos claros con ejemplos
+- Output con formato especifico
+- 25-50 lineas totales'''}
+"""
+
+
+@mcp.tool()
+def moragent_templates() -> str:
+    """List all available project templates with their agents and skills."""
+    lines = ["# MORAGENT — Templates de Proyecto\n"]
+    lines.append("Usa un template para scaffoldear proyectos con agentes y skills pre-configurados.\n")
+
+    for key, tpl in PROJECT_TEMPLATES.items():
+        lines.append(f"## `{key}` — {tpl['name']}")
+        lines.append(f"{tpl['description']}\n")
+        lines.append(f"**Orquestacion:** {tpl.get('orchestration', 'subagents')}")
+        lines.append(f"\n**Agentes ({len(tpl.get('agents', []))}):**")
+        for a in tpl.get("agents", []):
+            lines.append(f"- `{a['name']}` ({a.get('model','sonnet')}) — {a.get('role','')}")
+        lines.append(f"\n**Skills ({len(tpl.get('skills', []))}):**")
+        for s in tpl.get("skills", []):
+            lines.append(f"- `/{s['name']}` — {s.get('description','')}")
+        lines.append(f"\n**Carpetas:** {', '.join(tpl.get('folders', []))}")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("Para usar: `moragent_scaffold_project(project_name='Mi Proyecto', template='content-lab')`")
+    return "\n".join(lines)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

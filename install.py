@@ -58,6 +58,8 @@ MORAGENT AI Agent Studio
   6. Verificar calidad  — Checklist antes de entregar
   7. Buscar referencias — Trabajo previo como punto de partida
   8. Onboarding         — Como funciona todo (carpetas, archivos, flujo)
+  9. Templates          — Proyectos pre-armados listos para usar
+ 10. Enriquecer         — Mejorar un agente o skill existente
 
 Escribe el numero o describe que quieres hacer.
 ```
@@ -96,6 +98,14 @@ Llamar `moragent_learn` o `moragent_glossary`.
 ### 8. Onboarding
 1. Llamar `moragent_onboard`
 
+### 9. Templates
+1. Llamar `moragent_templates`
+
+### 10. Enriquecer
+1. Preguntar: nombre del agente o skill, y tipo (agente/skill)
+2. Llamar `moragent_enrich`
+3. Aplicar las mejoras sugeridas
+
 ## Atajos directos
 | Input | Accion |
 |-------|--------|
@@ -104,7 +114,9 @@ Llamar `moragent_learn` o `moragent_glossary`.
 | "status" o "infra" | Flujo 4 |
 | "aprender [tema]" | Flujo 5 |
 | "onboarding" | Flujo 8 |
-| numero (1-8) | Flujo correspondiente |
+| "templates" | Flujo 9 |
+| "enriquecer [nombre]" | Flujo 10 |
+| numero (1-10) | Flujo correspondiente |
 '''
 
 
