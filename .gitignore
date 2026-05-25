@@ -3,7 +3,6 @@ __pycache__/
 *.pyo
 .env
 sesion-*.md
-.mcp.json
 *.egg-info/
 dist/
 build/

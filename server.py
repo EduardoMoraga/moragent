@@ -99,7 +99,14 @@ ORCHESTRATION_PROTOCOL = """MORAGENT AI Agent Studio — tools for designing and
 mcp = FastMCP("moragent", instructions=ORCHESTRATION_PROTOCOL)
 
 def _cwd():
-    return Path(os.environ.get("MORAGENT_WORKSPACE", os.getcwd()))
+    # MORAGENT_WORKSPACE wins if set; otherwise use CLAUDE_PROJECT_DIR (Claude Code
+    # sets it in the MCP server's env to the project root) so workspace resolution
+    # does not depend on the spawned process's working directory. cwd is last resort.
+    return Path(
+        os.environ.get("MORAGENT_WORKSPACE")
+        or os.environ.get("CLAUDE_PROJECT_DIR")
+        or os.getcwd()
+    )
 
 def _claude_dir(): return _cwd() / ".claude"
 def _agents_dir(): return _claude_dir() / "agents"

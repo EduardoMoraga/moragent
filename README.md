@@ -28,17 +28,31 @@ You don't need to code. Just install Claude Code, type `/moragent`, and follow t
 ### Requirements
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed
 - [Python 3.10+](https://python.org/downloads)
-- `pip install "mcp[cli]"`
 
-### Get started (3 commands)
+### Get started (macOS / Linux)
 
 ```bash
 git clone https://github.com/EduardoMoraga/moragent.git
 cd moragent
+python3 -m pip install "mcp[cli]"
 claude
 ```
 
-Claude Code auto-detects the MCP server and the `/moragent` skill. Type `/moragent` and you're in.
+Claude Code auto-detects the MCP server and the `/moragent` skill. Type `/moragent` and you're in. No path editing required — `.mcp.json` runs `python3 server.py` from the project root.
+
+### Get started (Windows)
+
+Same steps, but on Windows the Python launcher is usually `python` (not `python3`). Tell the MCP server which interpreter to use by setting `PYTHON_CMD` once, then launch:
+
+```powershell
+git clone https://github.com/EduardoMoraga/moragent.git
+cd moragent
+python -m pip install "mcp[cli]"
+setx PYTHON_CMD python   # one-time; open a NEW terminal afterward
+claude
+```
+
+> `.mcp.json` resolves the interpreter as `${PYTHON_CMD:-python3}` — it defaults to `python3` (macOS/Linux) and falls back to whatever you set in `PYTHON_CMD` (e.g. `python` on Windows).
 
 ### Install in an existing project
 
@@ -188,15 +202,30 @@ MORAGENT es un plugin MCP para Claude Code que lo convierte en un **AI Agent Stu
 
 No necesitas saber programar. Solo necesitas Claude Code y escribir `/moragent`.
 
-### Instalacion
+### Instalacion (macOS / Linux)
 
 ```bash
 git clone https://github.com/EduardoMoraga/moragent.git
 cd moragent
+python3 -m pip install "mcp[cli]"
 claude
 ```
 
-Claude Code detecta automaticamente el servidor MCP y el skill `/moragent`. Solo escribe `/moragent` y listo.
+Claude Code detecta automaticamente el servidor MCP y el skill `/moragent`. Solo escribe `/moragent` y listo. No hay que editar rutas: `.mcp.json` corre `python3 server.py` desde la raiz del proyecto.
+
+### Instalacion (Windows)
+
+Los mismos pasos, pero en Windows el interprete suele ser `python` (no `python3`). Indicaselo al servidor MCP con `PYTHON_CMD` una sola vez:
+
+```powershell
+git clone https://github.com/EduardoMoraga/moragent.git
+cd moragent
+python -m pip install "mcp[cli]"
+setx PYTHON_CMD python   # una vez; abre una terminal NUEVA despues
+claude
+```
+
+> `.mcp.json` resuelve el interprete como `${PYTHON_CMD:-python3}`: por defecto usa `python3` (macOS/Linux) y respeta lo que definas en `PYTHON_CMD` (ej. `python` en Windows).
 
 ### Instalar en un proyecto existente
 
