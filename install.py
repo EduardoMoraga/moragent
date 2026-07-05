@@ -138,6 +138,17 @@ def install(target_dir: str = "."):
     shutil.copy2(SKILL_SRC, skill_path)
     print(f"[OK] /moragent skill -> {skill_path}")
 
+    # Migrate from MORAGENT <= 2.x: remove the legacy command file so /moragent
+    # doesn't register twice (the skill above replaces it).
+    legacy_command = target / ".claude" / "commands" / "moragent.md"
+    if legacy_command.exists():
+        legacy_command.unlink()
+        print(f"[OK] legacy command removed (migrated to skill): {legacy_command}")
+    legacy_flat_skill = target / ".claude" / "skills" / "moragent.md"
+    if legacy_flat_skill.exists():
+        legacy_flat_skill.unlink()
+        print(f"[OK] legacy flat skill removed: {legacy_flat_skill}")
+
     # 6. Done
     print(f"""
 ─────────────────────────────────────
