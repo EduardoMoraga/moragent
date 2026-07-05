@@ -207,7 +207,7 @@ A: MORAGENT scans your existing infrastructure first and recommends reusing what
 A: `/moragent english` or `/moragent espanol` — the setting persists in `.claude/moragent.json`.
 
 **Q: How do I update?**
-A: `cd moragent && git pull` — then restart Claude Code.
+A: If you cloned the repo: `cd moragent && git pull` — then restart Claude Code. If you installed into a project with `install.py`: pull the repo and re-run `python /path/to/moragent/install.py` in your project (it updates `server.py`, refreshes the skill, and migrates any legacy files from v2). Your language setting is preserved.
 
 **Q: Can I contribute?**
 A: Yes! See [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -316,7 +316,7 @@ No. Corre 100% local como servidor MCP en Python. Solo lee/escribe archivos en t
 `/moragent english` o `/moragent espanol` — la preferencia persiste en `.claude/moragent.json`.
 
 **¿Cómo actualizo?**
-`cd moragent && git pull` — y reinicia Claude Code.
+Si clonaste el repo: `cd moragent && git pull` — y reinicia Claude Code. Si lo instalaste en un proyecto con `install.py`: actualiza el repo y vuelve a correr `python /ruta/a/moragent/install.py` en tu proyecto (actualiza `server.py`, refresca el skill y migra los archivos legacy de v2). Tu idioma configurado se conserva.
 
 ---
 
