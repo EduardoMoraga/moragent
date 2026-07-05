@@ -7,3 +7,6 @@ sesion-*.md
 dist/
 build/
 .venv/
+# MORAGENT local config (per-user language setting)
+.claude/moragent.json
+.claude/settings.local.json

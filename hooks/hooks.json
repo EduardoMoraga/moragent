@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ${CLAUDE_PLUGIN_ROOT}/scripts/session-start.py",
+            "command": "\"${PYTHON_CMD:-python3}\" \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.py\"",
             "timeout": 5,
             "statusMessage": "Loading MORAGENT..."
           }

@@ -3,6 +3,46 @@
 All notable changes to MORAGENT are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.0.0] - 2026-07-05
+
+### Added
+- **Full bilingual system (ES/EN)**: new `moragent_language` tool (12th tool) with persistent
+  setting in `.claude/moragent.json`; menu, glossary, lessons, checklists, and generated
+  templates all follow the configured language
+- **Modern orchestration patterns**: new `patterns` lesson covering the 5 designs from
+  Anthropic's *Building Effective Agents* (pipeline, parallel, orchestrator-workers,
+  evaluator-optimizer, router); advisor now recommends a pattern with reasoning
+- **New brand identity**: MORAGENT ASCII wordmark, branded headers (`◢◤ MORAGENT ◥◣`) across
+  all tool outputs, redesigned 10-option menu grouped in LEARN / CREATE / OPERATE
+- Glossary expanded from 15 to 25 terms per language (new: Plugin Marketplace, Plan Mode,
+  Headless, Context, Checkpoint, Permissions, and the 5 orchestration patterns)
+- `moragent_enrich` now validates frontmatter: flags missing `description` (critical for
+  Claude Code auto-delegation) in agents and skills
+- Skills scanner now supports the modern `.claude/skills/<name>/SKILL.md` format, the flat
+  legacy format, and `.claude/commands/*.md`
+
+### Changed
+- **BREAKING — agent template frontmatter fixed**: generated agents now include `description:`
+  (required by Claude Code for auto-delegation); removed the non-standard `memory:` field
+- **BREAKING — orchestration values**: `subagents`/`team` replaced by the 6 pattern values
+  (`pipeline`, `parallel`, `orchestrator`, `evaluator`, `router`, `hybrid`); legacy values
+  still accepted and mapped automatically
+- `moragent_create_skill` now writes the modern format (`.claude/skills/<name>/SKILL.md`)
+  and drops the non-standard `user_invocable` frontmatter field
+- `VALID_MODELS` updated to current lineup: `haiku`, `sonnet`, `opus`, `fable`, `inherit`
+- Educational content updated to current Claude Code: skills as the primary format
+  (commands are legacy), expanded hook events, `/schedule` cloud routines, checkpoints,
+  plugin marketplace (`/plugin marketplace add owner/repo`)
+- `/moragent` entry point migrated from `.claude/commands/moragent.md` to
+  `.claude/skills/moragent/SKILL.md`; also shipped at plugin root (`skills/moragent/`)
+- `install.py` reads the skill from the repo (single source of truth) instead of embedding it
+- `hooks/hooks.json` now cross-platform (`${PYTHON_CMD:-python3}`)
+- Advisor section numbering fixed (was 1, 2, 4, 5)
+
+### Removed
+- Unused `glob` import in server.py
+- Legacy `.claude/commands/moragent.md` (replaced by the skill)
+
 ## [2.0.0] - 2026-04-09
 
 ### Added

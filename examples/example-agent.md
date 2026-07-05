@@ -1,7 +1,7 @@
 ---
 name: data-analyst
+description: Extrae, transforma y analiza datos (SQL, Python, visualizacion) para convertirlos en insights accionables. Usar para ETL, KPIs, reportes de datos.
 model: sonnet
-memory: project-scoped
 color: blue
 ---
 
