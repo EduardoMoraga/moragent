@@ -4,7 +4,7 @@
 Dashboard de analisis de ventas para el equipo comercial. Integra datos de CRM (Pipedrive), ERP y punto de venta para generar reportes semanales de performance por vendedor, producto y region.
 
 ## Orchestration
-**Model:** Subagents -- el orquestador (este CLAUDE.md) coordina a los agentes especializados.
+**Pattern:** Orchestrator-workers con gate de calidad (hybrid) -- el orquestador coordina a los agentes especializados y quality-reviewer actua como evaluator antes de publicar.
 
 ### Agents
 | Agent | Role | Model |

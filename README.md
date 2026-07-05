@@ -1,32 +1,46 @@
-# MORAGENT -- AI Agent Studio
+# MORAGENT — AI Agent Studio
+
+```
+█▀▄▀█ █▀█ █▀█ ▄▀█ █▀▀ █▀▀ █▄░█ ▀█▀
+█░▀░█ █▄█ █▀▄ █▀█ █▄█ ██▄ █░▀█ ░█░
+─────────────────────────────────────────────
+ AI AGENT STUDIO · v3.0.0 · Bilingual ES/EN
+─────────────────────────────────────────────
+```
 
 > Design, learn, and deploy agentic AI projects in Claude Code.
+> [Documentación en español más abajo ↓](#-documentación-en-español)
+
+![Version](https://img.shields.io/badge/version-3.0.0-blueviolet) ![Python](https://img.shields.io/badge/python-3.10+-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Language](https://img.shields.io/badge/lang-ES%20%E2%87%84%20EN-orange)
 
 ```
 You: /moragent
-Claude: 9-option guided menu -> create project, agents, skills, learn, quality check...
+Claude: 10-option guided menu → learn agentic AI, create projects,
+        agents & skills, quality-check your outputs... in ES or EN.
 ```
 
 ## What is MORAGENT?
 
-MORAGENT is an MCP plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that turns it into a full **AI Agent Studio**. It provides 11 tools and a guided menu (`/moragent`) that helps you structure, create, and operate multi-agent projects -- without writing any code.
+MORAGENT is an MCP plugin for [Claude Code](https://code.claude.com/docs) that turns it into a full **AI Agent Studio**. It provides 12 tools and a guided menu (`/moragent`) that helps you understand, structure, create, and operate multi-agent projects — without writing any code.
 
-It works by scanning your workspace, understanding what agents and skills you already have, and recommending what to create next. Think of it as an opinionated framework that enforces good practices: reuse over duplication, quality gates before delivery, and teaching through analogies.
+It works by scanning your workspace, understanding what agents and skills you already have, and recommending what to create next — including which **orchestration pattern** fits your project (pipeline, parallel, orchestrator-workers, evaluator-optimizer, router). Think of it as an opinionated framework that enforces good practices: reuse over duplication, quality gates before delivery, and teaching through analogies.
+
+**Fully bilingual:** switch between Spanish and English anytime with `/moragent english` or `/moragent espanol`. Menu, lessons, glossary, and generated templates all follow your language.
 
 ## Who is it for?
 
 | Level | What MORAGENT gives you |
 |---|---|
-| **Beginners** | Learn what agents, skills, and CLAUDE.md are -- with simple analogies |
+| **Beginners** | Learn what agents, skills, and CLAUDE.md are — with simple analogies, in your language |
 | **Intermediate** | Create complete projects with agents and skills in minutes |
-| **Advanced** | Quality gates, reference search, multi-agent orchestration patterns |
+| **Advanced** | Orchestration patterns, quality gates, reference search, enrichment diagnostics |
 
 You don't need to code. Just install Claude Code, type `/moragent`, and follow the menu.
 
 ## Quick Start
 
 ### Requirements
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed
+- [Claude Code](https://code.claude.com/docs) installed
 - [Python 3.10+](https://python.org/downloads)
 
 ### Get started (macOS / Linux)
@@ -62,40 +76,58 @@ python /path/to/moragent/install.py
 claude
 ```
 
-The installer copies `server.py`, creates `.mcp.json`, and registers `/moragent` in your project.
+The installer copies `server.py`, creates `.mcp.json`, and installs the `/moragent` skill in your project.
 
-## Tools (11 MCP tools)
+## Tools (12 MCP tools)
 
 | Tool | Category | What it does |
 |---|---|---|
-| `moragent_advisor` | Core | Analyze your idea, scan existing infra, recommend architecture |
+| `moragent_advisor` | Core | Analyze your idea, scan existing infra, recommend architecture + orchestration pattern |
 | `moragent_status` | Core | Dashboard of agents, skills, memories, projects |
-| `moragent_glossary` | Core | 15 agentic AI concepts with analogies |
-| `moragent_learn` | Core | 7 interactive lessons with diagrams |
-| `moragent_create_agent` | Create | Create specialized agent with identity + memory |
-| `moragent_create_skill` | Create | Create reusable skill (invoked as /name) |
+| `moragent_glossary` | Core | 25 agentic AI concepts with analogies (ES/EN) |
+| `moragent_learn` | Core | 8 interactive lessons with diagrams (ES/EN) |
+| `moragent_language` | Core | Get or switch MORAGENT's language (es/en, persisted) |
+| `moragent_create_agent` | Create | Create specialized agent with identity + memory (delegation-ready frontmatter) |
+| `moragent_create_skill` | Create | Create reusable skill in modern SKILL.md format (invoked as /name) |
 | `moragent_scaffold_project` | Create | Scaffold complete project (CLAUDE.md + agents + skills) |
 | `moragent_quality_check` | Operate | Checklist before delivering any output |
 | `moragent_find_references` | Operate | Search previous work for templates and benchmarks |
-| `moragent_onboard` | Operate | Visual explanation of how everything connects |
+| `moragent_onboard` | Operate | Visual guided tour of how everything connects |
 | `moragent_enrich` | Operate | Diagnose weak agents/skills and guide improvement |
 
 ## Menu (/moragent)
 
 ```
-MORAGENT AI Agent Studio
-========================
+ LEARN
+   1 · Workspace tour       First time? Start here
+   2 · Lessons              8 lessons: patterns, skills, context...
+   3 · Glossary             25 agentic AI concepts
 
-  1. New project        -- Describe your idea, get full structure
-  2. Create agent       -- Specialized agent with role and memory
-  3. Create skill       -- Reusable procedure (/name)
-  4. My infrastructure  -- Dashboard of agents, skills, memories
-  5. Learn              -- Agentic AI concepts with analogies
-  6. Quality check      -- Checklist before delivering
-  7. Find references    -- Previous work as starting point
-  8. Onboarding         -- How everything works (folders, files, flow)
-  9. Enrich             -- Improve an existing agent or skill
+ CREATE
+   4 · New project          Your idea → architecture + structure
+   5 · Create agent         Specialist with role, model and memory
+   6 · Create skill         Reusable procedure (/name)
+
+ OPERATE
+   7 · My infrastructure    Dashboard of agents, skills, memories
+   8 · Enrich               Diagnose and improve agents/skills
+   9 · Quality check        Checklist before delivering
+  10 · Find references      Prior work as a starting point
 ```
+
+## Orchestration Patterns
+
+MORAGENT teaches and recommends the 5 core patterns from Anthropic's *Building Effective Agents*:
+
+| Pattern | In one sentence | Use when |
+|---|---|---|
+| **Pipeline** | Sequential steps with validation gates | Order matters (research → write → edit) |
+| **Parallel** | Independent subtasks run at once, then consolidate | Subtasks don't depend on each other |
+| **Orchestrator-workers** | Orchestrator decomposes on the fly and delegates | You don't know the subtasks upfront |
+| **Evaluator-optimizer** | Generate + critique loop until the gate passes | Quality matters more than speed |
+| **Router** | Classifier dispatches inputs to specialized flows | Different input types, different treatment |
+
+The advisor recommends the right pattern for your project — and always starts with the simplest one that works.
 
 ## Architecture
 
@@ -103,13 +135,13 @@ MORAGENT AI Agent Studio
 You type something
        |
        v
-  CLAUDE.md (orchestrator)
-  Decides which agents to use
+  Orchestrator (your session + CLAUDE.md)
+  Picks a pattern and decides which agents to launch
        |
        v
   Agent activates:
     1. Reads CLAUDE.md (global context)
-    2. Reads its identity (.claude/agents/*.md)
+    2. Reads its identity (.claude/agents/*.md — description drives delegation)
     3. Reads its memory (.claude/agent-memory/)
     4. Executes and returns result
        |
@@ -121,17 +153,18 @@ You type something
 
 ```
 my-project/
-  CLAUDE.md                    <-- Orchestrator (project brain)
+  CLAUDE.md                    <-- Orchestrator handbook (project brain)
   .claude/
     agents/
-      data-analyst.md          <-- Agent identity
+      data-analyst.md          <-- Agent identity (frontmatter: name, description, model)
       report-writer.md
     skills/
-      etl-run.md               <-- Reusable procedure
-      client-status.md
+      etl-run/
+        SKILL.md               <-- Reusable procedure (modern format)
     agent-memory/
       data-analyst/
         MEMORY.md              <-- Persistent memory
+    moragent.json              <-- MORAGENT config (language)
   .mcp.json                    <-- MCP server config
 ```
 
@@ -139,35 +172,25 @@ my-project/
 
 | Concept | Analogy | Where it lives |
 |---|---|---|
-| **CLAUDE.md** | Company handbook -- everyone reads it | Project root |
+| **CLAUDE.md** | Company handbook — everyone reads it | Project root |
 | **Agent** | Specialized employee with memory | `.claude/agents/` |
-| **Skill** | Standard operating procedure | `.claude/skills/` |
+| **Skill** | Standard operating procedure | `.claude/skills/<name>/SKILL.md` |
 | **Memory** | Employee's accumulated experience | `.claude/agent-memory/` |
 | **MCP** | Phone app (Gmail, Slack...) | `.mcp.json` |
 | **Subagent** | Freelancer: gets task, delivers, leaves | Spawned by orchestrator |
-| **Agent Team** | Team with shared Kanban board | Experimental feature |
+| **Plugin** | Installable extension bundle | `/plugin` in Claude Code |
+
+Full glossary: 25 terms via `moragent_glossary`.
 
 ## Orchestration Protocol
 
 MORAGENT injects an orchestration protocol into every Claude Code session:
 
-1. **Before starting a project** -- call `moragent_advisor` to scan infra and recommend architecture
-2. **Before delivering output** -- call `moragent_quality_check` to verify quality
-3. **Before starting from scratch** -- call `moragent_find_references` to find prior work
-4. **After scaffolding** -- call `moragent_enrich` on each agent to ensure quality
-5. **When creating agents** -- reuse existing ones first; 3 focused agents > 10 generic ones
-
-## Real-World Example
-
-In a single 45-minute session using MORAGENT:
-
-- 3 specialized agents created (researcher, writer, data engineer)
-- 6 reusable skills defined
-- 1 research brief with 10 verified papers
-- 1 LinkedIn post (1,050 words) ready to publish
-- 1 weekly editorial calendar
-
-All orchestrated with Agent Teams, zero fabricated data, real sources with URLs.
+1. **Before starting a project** — call `moragent_advisor` to scan infra and recommend architecture + pattern
+2. **Before delivering output** — call `moragent_quality_check` to verify quality
+3. **Before starting from scratch** — call `moragent_find_references` to find prior work
+4. **After scaffolding** — call `moragent_enrich` on each agent to ensure quality
+5. **When creating agents** — reuse existing ones first; 3 focused agents > 10 generic ones
 
 ## FAQ
 
@@ -180,29 +203,36 @@ A: Not currently. MORAGENT is built specifically for Claude Code's MCP protocol.
 **Q: What if I already have agents and skills?**
 A: MORAGENT scans your existing infrastructure first and recommends reusing what you have before creating anything new.
 
+**Q: How do I switch languages?**
+A: `/moragent english` or `/moragent espanol` — the setting persists in `.claude/moragent.json`.
+
 **Q: How do I update?**
-A: `cd moragent && git pull` -- then restart Claude Code.
+A: `cd moragent && git pull` — then restart Claude Code.
 
 **Q: Can I contribute?**
 A: Yes! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## Documentacion en Espanol
+# 🇪🇸 Documentación en Español
 
-### Que es MORAGENT?
+## ¿Qué es MORAGENT?
 
-MORAGENT es un plugin MCP para Claude Code que lo convierte en un **AI Agent Studio** completo. Proporciona 11 herramientas y un menu guiado (`/moragent`) que te ayuda a estructurar, crear y operar proyectos multi-agente -- sin escribir codigo.
+MORAGENT es un plugin MCP para Claude Code que lo convierte en un **AI Agent Studio** completo. Proporciona 12 herramientas y un menú guiado (`/moragent`) que te ayuda a entender, estructurar, crear y operar proyectos multi-agente — sin escribir código.
 
-### Para quien es
+Escanea tu workspace, entiende qué agentes y skills ya tienes, y recomienda qué crear — incluyendo qué **patrón de orquestación** conviene a tu proyecto (pipeline, paralelo, orchestrator-workers, evaluator-optimizer, router).
 
-- **Principiantes**: Aprende que es un agente, una skill, un CLAUDE.md -- con analogias simples.
+**100% bilingüe:** cambia entre español e inglés cuando quieras con `/moragent english` o `/moragent espanol`. Menú, lecciones, glosario y plantillas generadas siguen tu idioma.
+
+## ¿Para quién es?
+
+- **Principiantes**: Aprende qué es un agente, una skill, un CLAUDE.md — con analogías simples, en tu idioma.
 - **Intermedios**: Crea proyectos completos con agentes y skills en minutos.
-- **Avanzados**: Quality gates, busqueda de referencias, orquestacion multi-agente.
+- **Avanzados**: Patrones de orquestación, quality gates, búsqueda de referencias, diagnóstico de agentes.
 
 No necesitas saber programar. Solo necesitas Claude Code y escribir `/moragent`.
 
-### Instalacion (macOS / Linux)
+## Instalación (macOS / Linux)
 
 ```bash
 git clone https://github.com/EduardoMoraga/moragent.git
@@ -211,23 +241,21 @@ python3 -m pip install "mcp[cli]"
 claude
 ```
 
-Claude Code detecta automaticamente el servidor MCP y el skill `/moragent`. Solo escribe `/moragent` y listo. No hay que editar rutas: `.mcp.json` corre `python3 server.py` desde la raiz del proyecto.
+Claude Code detecta automáticamente el servidor MCP y el skill `/moragent`. Solo escribe `/moragent` y listo.
 
-### Instalacion (Windows)
+## Instalación (Windows)
 
-Los mismos pasos, pero en Windows el interprete suele ser `python` (no `python3`). Indicaselo al servidor MCP con `PYTHON_CMD` una sola vez:
+Los mismos pasos, pero en Windows el intérprete suele ser `python` (no `python3`). Indícaselo al servidor MCP con `PYTHON_CMD` una sola vez:
 
 ```powershell
 git clone https://github.com/EduardoMoraga/moragent.git
 cd moragent
 python -m pip install "mcp[cli]"
-setx PYTHON_CMD python   # una vez; abre una terminal NUEVA despues
+setx PYTHON_CMD python   # una vez; abre una terminal NUEVA después
 claude
 ```
 
-> `.mcp.json` resuelve el interprete como `${PYTHON_CMD:-python3}`: por defecto usa `python3` (macOS/Linux) y respeta lo que definas en `PYTHON_CMD` (ej. `python` en Windows).
-
-### Instalar en un proyecto existente
+## Instalar en un proyecto existente
 
 ```bash
 cd mi-proyecto
@@ -235,49 +263,66 @@ python /ruta/a/moragent/install.py
 claude
 ```
 
-### Conceptos clave
+## Menú (/moragent)
 
-| Concepto | Analogia |
+```
+ APRENDE
+   1 · Tour del workspace   ¿Primera vez? Empieza acá
+   2 · Lecciones            8 lecciones: patrones, skills, contexto...
+   3 · Glosario             25 conceptos de IA agéntica
+
+ CREA
+   4 · Nuevo proyecto       Tu idea → arquitectura + estructura
+   5 · Crear agente         Especialista con rol, modelo y memoria
+   6 · Crear skill          Procedimiento reutilizable (/nombre)
+
+ OPERA
+   7 · Mi infraestructura   Dashboard de agentes, skills, memorias
+   8 · Enriquecer           Diagnostica y mejora agentes/skills
+   9 · Verificar calidad    Checklist antes de entregar
+  10 · Buscar referencias   Trabajo previo como punto de partida
+```
+
+## Los 5 patrones de orquestación
+
+| Patrón | En una frase | Úsalo cuando |
+|---|---|---|
+| **Pipeline** | Pasos en secuencia con gates de validación | El orden importa (investigar → redactar → editar) |
+| **Paralelo** | Subtareas independientes a la vez, luego consolidar | Las subtareas no dependen entre sí |
+| **Orchestrator-workers** | El orquestador descompone en vivo y delega | No conoces las subtareas de antemano |
+| **Evaluator-optimizer** | Generar + criticar en loop hasta aprobar | La calidad importa más que la velocidad |
+| **Router** | Un clasificador deriva cada input al flujo correcto | Inputs distintos, tratamientos distintos |
+
+## Conceptos clave
+
+| Concepto | Analogía |
 |---|---|
-| **CLAUDE.md** | Manual de la empresa -- todos lo leen |
+| **CLAUDE.md** | Manual de la empresa — todos lo leen |
 | **Agente** | Empleado especializado con memoria |
 | **Skill** | Manual de procedimiento (/nombre) |
 | **Memoria** | Experiencia acumulada del agente |
-| **MCP** | App del telefono (Gmail, Slack...) |
+| **MCP** | App del teléfono (Gmail, Slack...) |
 | **Subagente** | Freelancer: recibe tarea, entrega, se va |
-| **Team** | Equipo con Kanban compartido |
+| **Plugin** | Extensión instalable (como MORAGENT) |
 
-### Menu (/moragent)
+Glosario completo: 25 términos vía `moragent_glossary`.
 
-```
-  1. Nuevo proyecto     -- Describe tu idea y te armo todo
-  2. Crear agente       -- Agente con rol, modelo y memoria
-  3. Crear skill        -- Procedimiento reutilizable (/nombre)
-  4. Mi infraestructura -- Dashboard completo
-  5. Aprender           -- Conceptos con analogias y diagramas
-  6. Verificar calidad  -- Checklist antes de entregar
-  7. Buscar referencias -- Trabajo previo como base
-  8. Onboarding         -- Como funciona todo
-  9. Enriquecer         -- Mejorar un agente o skill existente
-```
+## Preguntas frecuentes
 
-### Ejemplo real
+**¿MORAGENT envía mis datos a algún lado?**
+No. Corre 100% local como servidor MCP en Python. Solo lee/escribe archivos en tu proyecto. Sin llamadas a APIs, sin telemetría.
 
-En una sesion de 45 minutos, usando MORAGENT se construyo:
+**¿Cómo cambio el idioma?**
+`/moragent english` o `/moragent espanol` — la preferencia persiste en `.claude/moragent.json`.
 
-- 3 agentes especializados (investigador, redactor, ingeniero de datos)
-- 6 skills reutilizables
-- 1 research brief con 10 papers verificados
-- 1 post LinkedIn de 1.050 palabras listo para publicar
-- 1 calendario editorial semanal
-
-Todo orquestado con Teams, cero datos inventados, fuentes reales con URL.
+**¿Cómo actualizo?**
+`cd moragent && git pull` — y reinicia Claude Code.
 
 ---
 
 ## License
 
-MIT -- Eduardo Moraga, 2026
+MIT — Eduardo Moraga, 2026
 
 ## Contributing
 

@@ -6,8 +6,8 @@ Reference examples showing what well-structured agents, skills, and projects loo
 
 | File | What it demonstrates |
 |---|---|
-| `example-agent.md` | A rich agent definition with all recommended sections |
-| `example-skill.md` | A well-written skill with clear steps and output format |
+| `example-agent.md` | A rich agent definition with all recommended sections (goes in `.claude/agents/`) |
+| `example-skill.md` | A well-written skill with clear steps and output format (goes in `.claude/skills/<name>/SKILL.md`) |
 | `example-project/CLAUDE.md` | A scaffolded project CLAUDE.md with orchestration setup |
 
 ## How to use
@@ -15,6 +15,7 @@ Reference examples showing what well-structured agents, skills, and projects loo
 These examples serve as **quality benchmarks**. When you create agents or skills with MORAGENT, compare them against these examples. The `moragent_enrich` tool uses similar criteria to evaluate your agents.
 
 A good agent has:
+- Frontmatter with `name`, `description` (Claude Code uses it to auto-delegate) and `model`
 - Clear identity and role (not generic)
 - 5+ expertise areas
 - Numbered working protocol

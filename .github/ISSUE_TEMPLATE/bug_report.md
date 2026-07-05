@@ -19,7 +19,7 @@ What should have happened?
 - OS: [Windows/Mac/Linux]
 - Python version: [e.g., 3.12]
 - Claude Code version: [e.g., 1.x]
-- MORAGENT version: [e.g., 2.0.0]
+- MORAGENT version: [e.g., 3.0.0]
 
 ## Error Output
 ```

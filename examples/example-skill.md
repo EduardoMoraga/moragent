@@ -1,7 +1,6 @@
 ---
 name: etl-run
 description: Corre el ETL semanal de un cliente - identifica orquestador, ejecuta scripts en orden, valida resultados y reporta.
-user_invocable: true
 ---
 
 # ETL Run

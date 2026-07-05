@@ -13,24 +13,44 @@ claude_dir = ws / ".claude"
 
 # Count infrastructure
 agents = len(list((claude_dir / "agents").glob("*.md"))) if (claude_dir / "agents").exists() else 0
-skills = len(list((claude_dir / "skills").glob("*.md"))) if (claude_dir / "skills").exists() else 0
+
+skills = 0
+skills_dir = claude_dir / "skills"
+if skills_dir.exists():
+    names = {f.parent.name for f in skills_dir.glob("*/SKILL.md")} | {f.stem for f in skills_dir.glob("*.md")}
+    skills = len(names)
+commands_dir = claude_dir / "commands"
+if commands_dir.exists():
+    skills += len(list(commands_dir.glob("*.md")))
+
 memories = len([d for d in (claude_dir / "agent-memory").iterdir() if d.is_dir()]) if (claude_dir / "agent-memory").exists() else 0
 
-print(f"""## MORAGENT AI Agent Studio v2.0.0 — Active
+# Configured language (persisted by moragent_language)
+lang = "es"
+try:
+    cfg = json.loads((claude_dir / "moragent.json").read_text(encoding="utf-8"))
+    if cfg.get("lang") in ("es", "en"):
+        lang = cfg["lang"]
+except (OSError, IOError, json.JSONDecodeError):
+    pass
+
+print(f"""## MORAGENT AI Agent Studio v3.0.0 — Active
 
 Infrastructure: {agents} agents, {skills} skills, {memories} memories.
+Language: {lang} (respond to MORAGENT interactions in this language; switch via moragent_language).
 
-Entry point: `/moragent` — menu guiado para crear, aprender y operar.
+Entry point: `/moragent` — guided menu to learn, create, and operate agentic AI projects.
 
-11 MCP tools disponibles:
-- moragent_advisor: Analiza idea, escanea infra, recomienda arquitectura concreta
-- moragent_quality_check: Gate de calidad ANTES de entregar outputs
-- moragent_find_references: Busca trabajo previo como referencia
-- moragent_onboard: Explica visualmente como funciona todo el workspace
-- moragent_enrich: Diagnostica agentes/skills debiles y guia su mejora
-- moragent_status: Dashboard de agentes, skills, memorias, proyectos
-- moragent_glossary: Conceptos de IA agentica con analogias
-- moragent_learn: Lecciones interactivas (7 temas)
-- moragent_create_agent: Crear agente con identidad y memoria
-- moragent_create_skill: Crear skill invocable con /nombre
-- moragent_scaffold_project: Scaffoldear proyecto completo""")
+12 MCP tools available:
+- moragent_advisor: Analyze idea, scan infra, recommend architecture + orchestration pattern
+- moragent_quality_check: Quality gate BEFORE delivering outputs
+- moragent_find_references: Search previous work for references
+- moragent_onboard: Visual guided tour of the workspace
+- moragent_enrich: Diagnose weak agents/skills and guide improvement
+- moragent_status: Dashboard of agents, skills, memories, projects
+- moragent_glossary: 25 agentic AI concepts with analogies (ES/EN)
+- moragent_learn: Interactive lessons (8 topics, incl. orchestration patterns)
+- moragent_language: Get or switch MORAGENT language (es/en)
+- moragent_create_agent: Create agent with identity and memory
+- moragent_create_skill: Create skill invocable as /name (SKILL.md format)
+- moragent_scaffold_project: Scaffold a complete project""")

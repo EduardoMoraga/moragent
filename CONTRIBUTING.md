@@ -32,7 +32,7 @@ MORAGENT is intentionally a **single-file MCP server** (`server.py`). This keeps
 | Scanners | `_scan_agents()`, `_scan_skills()`, `_scan_memories()`, `_scan_project_folders()` |
 | Glossary & Learn | Static educational content (Spanish) |
 | Templates | `AGENT_TPL`, `SKILL_TPL` for code generation |
-| Tools | 11 MCP tool functions decorated with `@mcp.tool()` |
+| Tools | 12 MCP tool functions decorated with `@mcp.tool()` |
 
 ## How to contribute
 

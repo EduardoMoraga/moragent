@@ -1,25 +1,24 @@
 """
 MORAGENT Installer
 ==================
-Instala MORAGENT en cualquier proyecto de Claude Code.
+Installs MORAGENT into any Claude Code project. / Instala MORAGENT en cualquier proyecto de Claude Code.
 
-Uso:
-    python install.py                  # Instala en el directorio actual
-    python install.py /ruta/proyecto   # Instala en un directorio especifico
+Usage / Uso:
+    python install.py                  # Install in current directory / Instala en el directorio actual
+    python install.py /path/to/project # Install in a specific directory / Instala en un directorio especifico
 
-Requisitos:
+Requirements / Requisitos:
     - Python 3.10+
-    - pip install mcp[cli]  (o: pip install "mcp[cli]")
-    - Claude Code instalado
+    - pip install "mcp[cli]"
+    - Claude Code installed
 
-Que hace:
-    1. Verifica que Python y mcp esten instalados
-    2. Copia server.py al proyecto
-    3. Crea .mcp.json para que Claude Code detecte MORAGENT
-    4. Crea .claude/commands/moragent.md (skill /moragent)
-    5. Listo — abre Claude Code y escribe /moragent
+What it does / Que hace:
+    1. Checks Python and mcp are installed
+    2. Copies server.py into the project
+    3. Creates .mcp.json so Claude Code detects MORAGENT
+    4. Installs the /moragent skill (.claude/skills/moragent/SKILL.md)
+    5. Done — open Claude Code and type /moragent
 """
-import os
 import sys
 import json
 import shutil
@@ -27,92 +26,15 @@ import subprocess
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
+SKILL_SRC = SCRIPT_DIR / "skills" / "moragent" / "SKILL.md"
 
-# ── Skill content (embedded to avoid extra file dependencies) ──
-SKILL_CONTENT = '''---
-name: moragent
-description: MORAGENT AI Agent Studio - punto de entrada principal. Menu guiado para aprender, crear, operar y gestionar proyectos de IA agentica.
-user_invocable: true
----
-
-# MORAGENT AI Agent Studio
-
-Punto de entrada principal del framework. Guia al usuario paso a paso.
-
-## Argumentos
-- `$ARGUMENTS`: Accion a ejecutar (opcional). Si no se pasa, mostrar menu principal.
-
-## Menu Principal
-
-Si `$ARGUMENTS` esta vacio o dice "menu", presentar este menu:
-
-```
-MORAGENT AI Agent Studio
-========================
-
-  1. Nuevo proyecto     — Describe tu idea y te armo todo
-  2. Crear agente       — Agente especializado con rol y memoria
-  3. Crear skill        — Procedimiento reutilizable (/nombre)
-  4. Mi infraestructura — Dashboard de agentes, skills, memorias
-  5. Aprender           — Conceptos de IA agentica con analogias
-  6. Verificar calidad  — Checklist antes de entregar
-  7. Buscar referencias — Trabajo previo como punto de partida
-  8. Onboarding         — Como funciona todo (carpetas, archivos, flujo)
-  9. Enriquecer         — Mejorar un agente o skill existente
-
-Escribe el numero o describe que quieres hacer.
-```
-
-## Flujo por opcion
-
-### 1. Nuevo proyecto
-1. Preguntar: "Describe tu proyecto en una frase"
-2. Llamar `moragent_advisor` con la idea
-3. Recomendar arquitectura: que agentes REUSAR, cuales crear
-4. Preguntar: "Quieres que lo cree?"
-5. Si acepta: llamar `moragent_scaffold_project`
-
-### 2. Crear agente
-1. Preguntar: nombre, rol, modelo (sonnet=rapido, opus=inteligente, haiku=barato)
-2. Llamar `moragent_create_agent`
-
-### 3. Crear skill
-1. Preguntar: nombre, pasos, output
-2. Llamar `moragent_create_skill`
-
-### 4. Mi infraestructura
-1. Llamar `moragent_status`
-
-### 5. Aprender
-Submenu: architecture, orchestration, skills, context, automation, plugins, example, glosario.
-Llamar `moragent_learn` o `moragent_glossary`.
-
-### 6. Verificar calidad
-1. Preguntar tipo: proposal, report, dashboard, analysis, code
-2. Llamar `moragent_quality_check`
-
-### 7. Buscar referencias
-1. Llamar `moragent_find_references`
-
-### 8. Onboarding
-1. Llamar `moragent_onboard`
-
-### 9. Enriquecer
-1. Preguntar: nombre del agente o skill, y tipo (agente/skill)
-2. Llamar `moragent_enrich`
-3. Aplicar las mejoras sugeridas
-
-## Atajos directos
-| Input | Accion |
-|-------|--------|
-| "nuevo proyecto [idea]" | Flujo 1 |
-| "crear agente [nombre]" | Flujo 2 |
-| "status" o "infra" | Flujo 4 |
-| "aprender [tema]" | Flujo 5 |
-| "onboarding" | Flujo 8 |
-| "enriquecer [nombre]" | Flujo 9 |
-| numero (1-9) | Flujo correspondiente |
-'''
+BANNER = r"""
+█▀▄▀█ █▀█ █▀█ ▄▀█ █▀▀ █▀▀ █▄░█ ▀█▀
+█░▀░█ █▄█ █▀▄ █▀█ █▄█ ██▄ █░▀█ ░█░
+─────────────────────────────────────
+ AI AGENT STUDIO v3.0.0 — Installer
+─────────────────────────────────────
+"""
 
 
 def find_python():
@@ -137,7 +59,7 @@ def find_python():
 def check_mcp():
     """Check if mcp package is installed."""
     try:
-        import mcp
+        import mcp  # noqa: F401
         return True
     except ImportError:
         return False
@@ -146,48 +68,44 @@ def check_mcp():
 def install(target_dir: str = "."):
     target = Path(target_dir).resolve()
 
-    print(f"""
-╔══════════════════════════════════════════╗
-║   MORAGENT AI Agent Studio — Installer   ║
-╚══════════════════════════════════════════╝
-
-Target: {target}
-""")
+    print(BANNER)
+    print(f"Target: {target}\n")
 
     # 1. Check Python
     python_cmd = find_python()
     if not python_cmd:
-        print("[ERROR] Python no encontrado. Instala Python 3.10+")
+        print("[ERROR] Python not found. Install Python 3.10+")
         print("        https://python.org/downloads")
         return False
     print(f"[OK] Python: {python_cmd}")
 
     # 2. Check/install mcp
     if not check_mcp():
-        print("[...] Instalando dependencia: mcp[cli]")
+        print("[...] Installing dependency: mcp[cli]")
         subprocess.run([python_cmd, "-m", "pip", "install", "mcp[cli]"], check=True)
-        print("[OK] mcp instalado")
+        print("[OK] mcp installed")
     else:
-        print("[OK] mcp ya instalado")
+        print("[OK] mcp already installed")
 
     # 3. Copy server.py
     moragent_dir = target / "moragent-plugin"
     moragent_dir.mkdir(exist_ok=True)
 
     server_src = SCRIPT_DIR / "server.py"
+    if not server_src.exists():
+        print(f"[ERROR] server.py not found next to install.py ({server_src})")
+        return False
     server_dst = moragent_dir / "server.py"
     shutil.copy2(server_src, server_dst)
-    print(f"[OK] server.py → {server_dst}")
+    print(f"[OK] server.py -> {server_dst}")
 
     # 4. Create .mcp.json
-    # Use "python" as command for portability across OS.
-    # On Windows, "python" resolves via PATH. On Mac/Linux, "python3" may be needed.
-    import platform
-    portable_python = "python" if platform.system() == "Windows" else "python3"
+    # ${PYTHON_CMD:-python3} defaults to python3 (macOS/Linux) and respects
+    # PYTHON_CMD (e.g. "python" on Windows) — same convention as the repo's .mcp.json.
     mcp_config = {
         "mcpServers": {
             "moragent": {
-                "command": portable_python,
+                "command": "${PYTHON_CMD:-python3}",
                 "args": [str(server_dst)],
                 "env": {"PYTHONUTF8": "1"}
             }
@@ -201,33 +119,37 @@ Target: {target}
             existing = json.loads(mcp_path.read_text(encoding="utf-8"))
             existing.setdefault("mcpServers", {})["moragent"] = mcp_config["mcpServers"]["moragent"]
             mcp_config = existing
-            print(f"[OK] .mcp.json actualizado (merge con existente)")
-        except:
-            print(f"[OK] .mcp.json creado (reemplazo)")
+            print("[OK] .mcp.json updated (merged with existing)")
+        except (json.JSONDecodeError, OSError):
+            print("[OK] .mcp.json created (replaced invalid file)")
     else:
-        print(f"[OK] .mcp.json creado")
+        print("[OK] .mcp.json created")
 
     mcp_path.write_text(json.dumps(mcp_config, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    # 5. Create skill /moragent
-    commands_dir = target / ".claude" / "commands"
-    commands_dir.mkdir(parents=True, exist_ok=True)
-    skill_path = commands_dir / "moragent.md"
-    skill_path.write_text(SKILL_CONTENT, encoding="utf-8")
-    print(f"[OK] /moragent skill → {skill_path}")
+    # 5. Install the /moragent skill (modern SKILL.md format)
+    if not SKILL_SRC.exists():
+        print(f"[ERROR] Skill source not found: {SKILL_SRC}")
+        print("        Run install.py from a full MORAGENT checkout (git clone).")
+        return False
+    skill_dir = target / ".claude" / "skills" / "moragent"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    skill_path = skill_dir / "SKILL.md"
+    shutil.copy2(SKILL_SRC, skill_path)
+    print(f"[OK] /moragent skill -> {skill_path}")
 
     # 6. Done
     print(f"""
-╔══════════════════════════════════════════╗
-║          Instalacion completa!           ║
-╚══════════════════════════════════════════╝
+─────────────────────────────────────
+ Installation complete!
+─────────────────────────────────────
 
-Que hacer ahora:
-  1. Abre Claude Code en: {target}
-  2. Claude te preguntara si quieres activar MORAGENT → di "si"
-  3. Escribe: /moragent
+Next steps:
+  1. Open Claude Code in: {target}
+  2. Claude will ask to enable MORAGENT -> say "yes"
+  3. Type: /moragent
 
-Eso es todo. MORAGENT te guia desde ahi.
+MORAGENT guides you from there. Bilingual: /moragent english | /moragent espanol
 """)
     return True
 
