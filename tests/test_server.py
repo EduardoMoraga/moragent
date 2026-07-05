@@ -442,6 +442,40 @@ class TestCreateSkill:
             assert fm["name"] == "weekly-report"
 
 
+# ── Onboard ──────────────────────────────────────────────────────────────────
+
+
+class TestOnboard:
+    def test_tree_shows_only_project_agents(self, tmp_path):
+        mixed = [
+            {"name": "proj-agent", "model": "sonnet", "scope": "project",
+             "description": "", "has_description_fm": True, "path": ""},
+            {"name": "someones-global-agent", "model": "opus", "scope": "user",
+             "description": "", "has_description_fm": True, "path": ""},
+        ]
+        with patch.object(server, "_scan_agents", return_value=mixed):
+            with patch.object(server, "_scan_skills", return_value=[]):
+                with patch.object(server, "_scan_project_folders", return_value=[]):
+                    with patch.object(server, "_cwd", return_value=tmp_path):
+                        result = server.moragent_onboard()
+                        assert "proj-agent.md" in result
+                        # user-scope agents must NOT appear as workspace files
+                        assert "someones-global-agent.md" not in result
+                        # ...but are reported as a separate global count
+                        assert "1 agente" in result and "globales" in result
+
+    def test_example_ignores_user_agents(self, tmp_path):
+        mixed = [
+            {"name": "someones-global-agent", "model": "opus", "scope": "user",
+             "description": "", "has_description_fm": True, "path": ""},
+        ]
+        with patch.object(server, "_scan_agents", return_value=mixed):
+            with patch.object(server, "_scan_skills", return_value=[]):
+                with patch.object(server, "_scan_project_folders", return_value=[]):
+                    result = server._generate_dynamic_example()
+                    assert "someones-global-agent" not in result
+
+
 # ── Enrich ───────────────────────────────────────────────────────────────────
 
 

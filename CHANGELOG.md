@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [3.0.0] - 2026-07-05
 
 ### Added
+- **Zero-friction install**: new `run_server.py` launcher — no global `pip install`
+  needed; it bootstraps a repo-local `.venv` with `mcp[cli]` on first run, sidestepping
+  PEP 668 (Homebrew/Debian managed Pythons). Self-healing: repairs half-installed
+  environments (interrupted first runs) and tolerates concurrent first launches.
+  Fails with actionable messages on Python < 3.10 and missing `python3-venv` (Debian)
+- Repo `CLAUDE.md` so the clone-and-run flow greets first-time users correctly
 - **Full bilingual system (ES/EN)**: new `moragent_language` tool (12th tool) with persistent
   setting in `.claude/moragent.json`; menu, glossary, lessons, checklists, and generated
   templates all follow the configured language
@@ -38,6 +44,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - `install.py` reads the skill from the repo (single source of truth) instead of embedding it
 - `hooks/hooks.json` now cross-platform (`${PYTHON_CMD:-python3}`)
 - Advisor section numbering fixed (was 1, 2, 4, 5)
+
+### Fixed (public-readiness audit)
+- Onboarding tour and dynamic example no longer present user-scoped agents
+  (`~/.claude/agents`) as if they were files of the current project — the workspace
+  tree shows project agents only, with global agents reported as a separate count
+- `install.py` writes a relative launcher path in the generated `.mcp.json`
+  (portable/committable) and drops a `.gitignore` so the bootstrap `.venv` never
+  pollutes the user's git history; global pip failure no longer aborts the install
+- `moragent_status` reports `.env` as optional instead of MISSING
+- CONTRIBUTING glossary example matched the real bilingual `what/analogy/where/tip`
+  format (the old example would have crashed the glossary)
+- `skills/advisor/` renamed to `skills/moragent-advisor/` to match its frontmatter name
+
+### Known limitations
+- Installation as a marketplace plugin (`/plugin marketplace add`) is not wired up yet
+  (the repo ships the `.claude-plugin/` manifest, but `.mcp.json` paths target the
+  clone-and-run flow); planned for 3.1
+- The SessionStart hook uses POSIX env expansion and may not run on Windows when
+  installed as a plugin (cosmetic: the banner is skipped)
 
 ### Removed
 - Unused `glob` import in server.py

@@ -25,6 +25,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+if sys.version_info < (3, 10):
+    print(f"[ERROR] MORAGENT requires Python 3.10+ (you have {sys.version_info.major}.{sys.version_info.minor}).")
+    print("        https://python.org/downloads")
+    sys.exit(1)
+
 SCRIPT_DIR = Path(__file__).parent.resolve()
 SKILL_SRC = SCRIPT_DIR / "skills" / "moragent" / "SKILL.md"
 
@@ -79,11 +84,16 @@ def install(target_dir: str = "."):
         return False
     print(f"[OK] Python: {python_cmd}")
 
-    # 2. Check/install mcp
+    # 2. Check/install mcp (best effort — run_server.py bootstraps a local
+    # venv on first launch if this fails, e.g. on PEP 668 managed Pythons)
     if not check_mcp():
         print("[...] Installing dependency: mcp[cli]")
-        subprocess.run([python_cmd, "-m", "pip", "install", "mcp[cli]"], check=True)
-        print("[OK] mcp installed")
+        result = subprocess.run([python_cmd, "-m", "pip", "install", "mcp[cli]"])
+        if result.returncode == 0:
+            print("[OK] mcp installed")
+        else:
+            print("[--] Global install failed (managed Python?). No problem:")
+            print("     run_server.py will create a local .venv on first launch.")
     else:
         print("[OK] mcp already installed")
 
@@ -92,21 +102,31 @@ def install(target_dir: str = "."):
     moragent_dir.mkdir(exist_ok=True)
 
     server_src = SCRIPT_DIR / "server.py"
-    if not server_src.exists():
-        print(f"[ERROR] server.py not found next to install.py ({server_src})")
+    launcher_src = SCRIPT_DIR / "run_server.py"
+    if not server_src.exists() or not launcher_src.exists():
+        print(f"[ERROR] server.py / run_server.py not found next to install.py ({SCRIPT_DIR})")
         return False
     server_dst = moragent_dir / "server.py"
+    launcher_dst = moragent_dir / "run_server.py"
     shutil.copy2(server_src, server_dst)
+    shutil.copy2(launcher_src, launcher_dst)
     print(f"[OK] server.py -> {server_dst}")
+    print(f"[OK] run_server.py -> {launcher_dst}")
+
+    # Keep the bootstrap venv out of the user's git history
+    (moragent_dir / ".gitignore").write_text(".venv/\n__pycache__/\n", encoding="utf-8")
 
     # 4. Create .mcp.json
     # ${PYTHON_CMD:-python3} defaults to python3 (macOS/Linux) and respects
     # PYTHON_CMD (e.g. "python" on Windows) — same convention as the repo's .mcp.json.
+    # run_server.py bootstraps a local venv with mcp[cli] if needed.
+    # Relative path: the MCP server's cwd is the project root, and this keeps
+    # .mcp.json portable (movable folders, committable, works for teammates).
     mcp_config = {
         "mcpServers": {
             "moragent": {
                 "command": "${PYTHON_CMD:-python3}",
-                "args": [str(server_dst)],
+                "args": ["moragent-plugin/run_server.py"],
                 "env": {"PYTHONUTF8": "1"}
             }
         }

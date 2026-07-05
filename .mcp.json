@@ -2,7 +2,7 @@
   "mcpServers": {
     "moragent": {
       "command": "${PYTHON_CMD:-python3}",
-      "args": ["server.py"],
+      "args": ["run_server.py"],
       "env": {
         "PYTHONUTF8": "1"
       }

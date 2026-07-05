@@ -1148,8 +1148,11 @@ def moragent_status() -> str:
         lines.append(_t("- _(sin proyectos aun)_", "- _(no projects yet)_"))
 
     lines.append(_t("\n## Archivos de infraestructura", "\n## Infrastructure files"))
-    for f in ["CLAUDE.md", ".mcp.json", ".env"]:
-        status = "OK" if (ws / f).exists() else _t("FALTA", "MISSING")
+    for f, required in [("CLAUDE.md", True), (".mcp.json", True), (".env", False)]:
+        if (ws / f).exists():
+            status = "OK"
+        else:
+            status = _t("FALTA", "MISSING") if required else _t("opcional, no presente", "optional, not present")
         lines.append(f"- {f}: **{status}**")
 
     lines.append(_t(
@@ -1203,7 +1206,8 @@ def moragent_glossary(term: str = "") -> str:
 def _generate_dynamic_example() -> str:
     """Generate a real example based on the user's actual workspace."""
     projects = _scan_project_folders()
-    agents = _scan_agents()
+    # Only project-scoped agents: the example narrates THIS workspace's flow.
+    agents = [a for a in _scan_agents() if a["scope"] == "project"]
     skills = _scan_skills()
 
     etl_project = next((p for p in projects if p.get("has_etl")), None)
@@ -2065,16 +2069,25 @@ def moragent_onboard() -> str:
     For first-time users or anyone who wants to understand the system."""
 
     ws = _cwd()
-    agents = _scan_agents()
+    all_agents = _scan_agents()
+    # The tree below describes THIS workspace's folder — only project-scoped
+    # agents live in <ws>/.claude/agents/. User-scoped agents (~/.claude/agents)
+    # are reported separately so the tree never claims files it doesn't contain.
+    agents = [a for a in all_agents if a["scope"] == "project"]
+    user_agents_count = sum(1 for a in all_agents if a["scope"] == "user")
     skills = _scan_skills()
     projects = _scan_project_folders()
 
     has_claude_md = (ws / "CLAUDE.md").exists()
     has_env = (ws / ".env").exists()
 
-    agent_list = "\n".join(f"    │   ├── {a['name']}.md  ({a['model']}, {a['scope']})" for a in agents[:8])
+    agent_list = "\n".join(f"    │   ├── {a['name']}.md  ({a['model'] or 'inherit'})" for a in agents[:8])
     if len(agents) > 8:
         agent_list += _t(f"\n    │   └── ... y {len(agents)-8} mas", f"\n    │   └── ... and {len(agents)-8} more")
+    global_agents_note = _t(
+        f"- **{user_agents_count} agentes globales** en ~/.claude/agents (tuyos, disponibles en todos tus proyectos)",
+        f"- **{user_agents_count} global agents** in ~/.claude/agents (yours, available in every project)"
+    ) if user_agents_count else ""
 
     skill_list = "\n".join(f"    │   ├── {s['name']}/  (/{s['name']})" for s in skills[:8])
     if len(skills) > 8:
@@ -2163,7 +2176,8 @@ Tu escribes: "Necesito el reporte de ventas semana 14"
 Detalle completo: `/moragent aprender patterns`
 
 ## Tu infraestructura actual
-- **{len(agents)} agentes** configurados
+- **{len(agents)} agentes** en este proyecto
+{global_agents_note}
 - **{len(skills)} skills** disponibles
 - **{len(projects)} proyectos** con CLAUDE.md
 
@@ -2249,7 +2263,8 @@ You type: "I need the week 14 sales report"
 Full detail: `/moragent learn patterns`
 
 ## Your current infrastructure
-- **{len(agents)} agents** configured
+- **{len(agents)} agents** in this project
+{global_agents_note}
 - **{len(skills)} skills** available
 - **{len(projects)} projects** with CLAUDE.md
 
