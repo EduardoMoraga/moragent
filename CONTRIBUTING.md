@@ -30,7 +30,7 @@ MORAGENT is intentionally a **single-file MCP server** (`server.py`). This keeps
 | Orchestration Protocol | Instructions injected into every Claude Code session |
 | Helpers | `_read_safe()`, `_parse_frontmatter()`, `_next_color()` |
 | Scanners | `_scan_agents()`, `_scan_skills()`, `_scan_memories()`, `_scan_project_folders()` |
-| Glossary & Learn | Static educational content (Spanish) |
+| Glossary & Learn | Static educational content, bilingual (`GLOSSARY["es"]` / `GLOSSARY["en"]`) |
 | Templates | `AGENT_TPL`, `SKILL_TPL` for code generation |
 | Tools | 12 MCP tool functions decorated with `@mcp.tool()` |
 
@@ -47,20 +47,35 @@ MORAGENT is intentionally a **single-file MCP server** (`server.py`). This keeps
 
 ### Adding a glossary term
 
-Add to the `GLOSSARY` dict following the existing format:
+MORAGENT is bilingual: add the term to **both** `GLOSSARY["es"]` and `GLOSSARY["en"]`
+(same position in both dicts — cross-language lookup maps terms by index). The field
+keys are language-neutral:
 
 ```python
+# In GLOSSARY["es"]:
+"NombreDelTermino": {
+    "what": "Que es (en espanol)",
+    "analogy": "Analogia simple",
+    "where": "Donde vive en el workspace",
+    "tip": "Tip practico",
+},
+# In GLOSSARY["en"] (same position):
 "TermName": {
-    "que": "What it is",
-    "analogia": "Simple analogy",
-    "donde": "Where it lives in the workspace",
+    "what": "What it is (in English)",
+    "analogy": "Simple analogy",
+    "where": "Where it lives in the workspace",
     "tip": "Practical tip",
-}
+},
 ```
+
+Tests enforce parity: both languages must have the same number of terms with exactly
+the keys `what`, `analogy`, `where`, `tip`.
 
 ### Adding a lesson topic
 
-Add to the `LEARN_CONTENT` dict. Use markdown with headers, diagrams, and examples. Keep the teaching style: analogy first, then technical detail.
+Add the topic to **both** `LEARN_CONTENT["es"]` and `LEARN_CONTENT["en"]` (tests enforce
+matching topic keys). Use markdown with headers, diagrams, and examples. Keep the
+teaching style: analogy first, then technical detail.
 
 ## Code style
 

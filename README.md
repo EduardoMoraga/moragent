@@ -48,11 +48,14 @@ You don't need to code. Just install Claude Code, type `/moragent`, and follow t
 ```bash
 git clone https://github.com/EduardoMoraga/moragent.git
 cd moragent
-python3 -m pip install "mcp[cli]"
 claude
 ```
 
-Claude Code auto-detects the MCP server and the `/moragent` skill. Type `/moragent` and you're in. No path editing required — `.mcp.json` runs `python3 server.py` from the project root.
+That's it — two commands and open Claude Code. When Claude Code asks to enable the `moragent` MCP server, say yes. On first launch, `run_server.py` automatically creates a local `.venv` and installs `mcp[cli]` inside it (30-60s, one time only) — no global pip install, no PEP 668 "externally-managed-environment" errors. Then type `/moragent` and you're in.
+
+> Optional: if you prefer managing the dependency yourself, `python3 -m pip install "mcp[cli]"` (or `pip install -r requirements.txt`) before launching also works — the launcher uses your interpreter directly when `mcp` is already available.
+>
+> If the very first connection times out while the environment is being created (slow network), just reconnect with `/mcp` — the setup is self-healing and resumes where it left off.
 
 ### Get started (Windows)
 
@@ -61,7 +64,6 @@ Same steps, but on Windows the Python launcher is usually `python` (not `python3
 ```powershell
 git clone https://github.com/EduardoMoraga/moragent.git
 cd moragent
-python -m pip install "mcp[cli]"
 setx PYTHON_CMD python   # one-time; open a NEW terminal afterward
 claude
 ```
@@ -195,7 +197,7 @@ MORAGENT injects an orchestration protocol into every Claude Code session:
 ## FAQ
 
 **Q: Does MORAGENT send my data anywhere?**
-A: No. It runs 100% locally as a Python MCP server. It only reads/writes files in your project directory. No API calls, no telemetry, no external connections.
+A: No. It runs 100% locally as a Python MCP server. It only reads/writes files in your project directory. No API calls, no telemetry. The only network access is the one-time download of `mcp[cli]` from PyPI during first-run setup.
 
 **Q: Can I use it with models other than Claude?**
 A: Not currently. MORAGENT is built specifically for Claude Code's MCP protocol.
@@ -237,20 +239,20 @@ No necesitas saber programar. Solo necesitas Claude Code y escribir `/moragent`.
 ```bash
 git clone https://github.com/EduardoMoraga/moragent.git
 cd moragent
-python3 -m pip install "mcp[cli]"
 claude
 ```
 
-Claude Code detecta automáticamente el servidor MCP y el skill `/moragent`. Solo escribe `/moragent` y listo.
+Eso es todo — dos comandos y abrir Claude Code. Cuando pregunte si habilitas el servidor MCP `moragent`, di que sí. En el primer arranque, `run_server.py` crea automáticamente un `.venv` local e instala `mcp[cli]` adentro (30-60s, solo una vez) — sin pip global, sin errores de "externally-managed-environment". Después escribe `/moragent` y listo.
+
+> Si la primera conexión expira mientras se crea el entorno (red lenta), reconecta con `/mcp` — el setup se auto-repara y continúa donde quedó.
 
 ## Instalación (Windows)
 
-Los mismos pasos, pero en Windows el intérprete suele ser `python` (no `python3`). Indícaselo al servidor MCP con `PYTHON_CMD` una sola vez:
+Los mismos pasos, pero en Windows el intérprete suele ser `python` (no `python3`). Indícaselo con `PYTHON_CMD` una sola vez:
 
 ```powershell
 git clone https://github.com/EduardoMoraga/moragent.git
 cd moragent
-python -m pip install "mcp[cli]"
 setx PYTHON_CMD python   # una vez; abre una terminal NUEVA después
 claude
 ```
@@ -310,7 +312,7 @@ Glosario completo: 25 términos vía `moragent_glossary`.
 ## Preguntas frecuentes
 
 **¿MORAGENT envía mis datos a algún lado?**
-No. Corre 100% local como servidor MCP en Python. Solo lee/escribe archivos en tu proyecto. Sin llamadas a APIs, sin telemetría.
+No. Corre 100% local como servidor MCP en Python. Solo lee/escribe archivos en tu proyecto. Sin llamadas a APIs, sin telemetría. El único acceso a red es la descarga única de `mcp[cli]` desde PyPI durante el setup inicial.
 
 **¿Cómo cambio el idioma?**
 `/moragent english` o `/moragent espanol` — la preferencia persiste en `.claude/moragent.json`.
