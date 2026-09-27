@@ -69,6 +69,8 @@ async function muxChecks(pref) {
   if (error) res.push(check('mux', 'selected', 'fail', t('Multiplexor configurado', 'Configured multiplexer'), error.message, error.hint || 'mora config set mux auto'));
   else if (chosen === 'headless') {
     res.push(check('mux', 'selected', 'warn', t('Paneles', 'Panes'), t('sin multiplexor: los agentes corren en segundo plano (headless)', 'no multiplexer: agents run in the background (headless)'), MUXES.tmux.install));
+  } else if (MUXES[chosen] && !which(MUXES[chosen].bin)) {
+    res.push(check('mux', 'selected', 'warn', t('Paneles', 'Panes'), t(`se detectó ${chosen} pero su CLI no está en el PATH`, `${chosen} detected but its CLI is not on PATH`), MUXES[chosen].install));
   } else res.push(check('mux', 'selected', 'ok', t('Paneles', 'Panes'), chosen));
   return { checks: res, chosen };
 }

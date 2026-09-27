@@ -1,7 +1,7 @@
 import { which, run } from '../core/exec.js';
 import { MoragentError } from '../core/errors.js';
 import { t } from '../core/i18n.js';
-import { checked, containsValue, findValue, parseJSON, plainHandle } from './util.js';
+import { checked, containsValue, findValue, paneCommand, parseJSON, plainHandle } from './util.js';
 
 const call = (args, opts) => checked(run('herdr', ['pane', ...args], opts), `herdr pane ${args[0]}`);
 
@@ -13,7 +13,7 @@ function handleFrom(text) {
 export default {
   name: 'herdr',
   available: () => !!which('herdr'),
-  spawn({ root, title, command, cwd = root, anchor, direction = 'horizontal' }) {
+  spawn({ root, role, title, command, cwd = root, anchor, direction = 'horizontal' }) {
     const args = ['split'];
     if (anchor) args.push(anchor);
     else args.push('--current');
@@ -29,7 +29,7 @@ export default {
       const renamed = run('herdr', ['pane', 'rename', handle, title], { cwd });
       if (renamed.code !== 0) { /* title is cosmetic */ }
     }
-    if (command) call(['run', handle, command], { cwd });
+    if (command) call(['run', handle, paneCommand({ root, role, command })], { cwd });
     return { handle };
   },
   send(handle, text, { enter = true } = {}) {

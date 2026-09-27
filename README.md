@@ -39,7 +39,7 @@ mora
 
 No project yet → a short wizard (five questions, Enter accepts the default). Project already there → a dashboard with the next step to take. Node ≥ 18, zero npm dependencies.
 
-<p align="center"><img src="docs/assets/demo.gif" alt="mora up opening four agent panes" width="820"></p>
+<p align="center"><img src="docs/assets/demo.gif" alt="Illustration: mora up opening three agent panes next to the lead" width="820"><br><sub>Illustration — the real recording is generated with <code>vhs docs/demo.tape</code>.</sub></p>
 
 ## Why MORAGENT
 
@@ -64,17 +64,18 @@ cd my-app
 mora init --preset trio --goal "Online coffee shop"   # or just `mora` for the wizard
 mora doctor                                           # Node, CLIs, multiplexers, Obsidian, project
 mora plan "Stripe checkout, admin dashboard and email receipts"
-#   Size: M · Preset: trio · creates .moragent/specs/<slug>/
+#   prints size (S/M/L/XL), recommended preset and roles, and creates the first spec
+mora spec status                                      # every spec with its phase and slug
 mora up                                               # one pane per role, next to yours
-mora dispatch backend "Orders API with Stripe webhooks" --spec checkout
-mora dispatch frontend "Checkout screen" --spec checkout
+mora dispatch backend "Orders API with Stripe webhooks" --spec <slug>
+mora dispatch frontend "Checkout screen" --spec <slug>
 mora wait T-0001 T-0002                               # blocks until done / blocked / failed
 mora board                                            # kanban of the task bus
 mora memory add "Orders use UUIDv7" --tier canonical --kind decision --body "…"
 mora brain link                                       # .moragent/ shows up in your Obsidian vault
 ```
 
-Every read command takes `--json`. Every command works without a TTY, so the lead agent itself can run all of this.
+Every read command takes `--json`. Every command works without a TTY, so the lead agent itself can run all of this. Add `--dry-run` to `up` or `dispatch` to see what would happen without opening panes or sending anything.
 
 ## How it flows
 
@@ -126,7 +127,7 @@ flowchart LR
 |---|---|---|---|
 | Claude Code (`claude`) | `CLAUDE.md` → `@AGENTS.md` | `.claude/skills` | `npm i -g @anthropic-ai/claude-code` |
 | Codex (`codex`) | `AGENTS.md` | `.agents/skills` | `npm i -g @openai/codex` |
-| Antigravity (`agy`) | `GEMINI.md`, `AGENTS.md` | `.agents/skills` | see [antigravity.google](https://antigravity.google/docs) |
+| Antigravity (`agy`) | `GEMINI.md`, `AGENTS.md` | `.agents/skills` | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` · Windows: `irm https://antigravity.google/cli/install.ps1 \| iex` ([repo](https://github.com/google-antigravity/antigravity-cli)) |
 | Pi (`pi`) | `AGENTS.md` | `.agents/skills`, `.pi/skills` | `npm i -g @mariozechner/pi-coding-agent` |
 | OpenCode (`opencode`) | `AGENTS.md` | `.agents/skills`, `.opencode/skill` | `npm i -g opencode-ai` |
 | Gemini CLI (`gemini`) | `GEMINI.md` | `.agents/skills` | `npm i -g @google/gemini-cli` |
@@ -142,6 +143,38 @@ Force one with `mora up --mux tmux` or `mora config set mux tmux`.
 
 `mora sync` keeps one canonical `AGENTS.md` and writes a managed block (between `<!-- moragent:… -->` markers) into each file the crew needs. It never touches your text outside the markers.
 
+## Autonomy and safety
+
+A worker that stops to ask "may I run `mora done`?" in a pane nobody is watching stalls the whole crew. So every role has an autonomy level, set in `crew.<role>.autonomy`:
+
+| Mode | What the agent may do without asking | Flags MORAGENT passes |
+|---|---|---|
+| `auto` **(default)** | edit files in the repo and run `mora …`, `node`, `npm test`, `git status` and `git diff`; everything else still asks (Claude) or stays inside the workspace sandbox (Codex) | Claude: `--permission-mode acceptEdits --allowedTools "Bash(mora:*)" "Bash(npm test:*)" "Bash(node:*)" "Bash(git status:*)" "Bash(git diff:*)"` · Codex: `-s workspace-write -a never` · Antigravity: `--mode accept-edits` · Gemini: `--approval-mode auto_edit` |
+| `full` | anything — no prompts, no sandbox | Claude/Antigravity: `--dangerously-skip-permissions` · Codex: `--dangerously-bypass-approvals-and-sandbox` · Gemini: `--yolo` |
+| `ask` | nothing; the CLI's own prompts apply | none |
+
+Pi and OpenCode do not prompt for permissions, so they get no extra flags. Headless runs are never `ask` (nobody could answer): they run at least as `auto`.
+
+**Why `auto` is the default:** it is the smallest set of permissions that lets a worker finish a task and report back on its own. Codex keeps its workspace sandbox, and Claude can only run the commands on the list without asking.
+
+```sh
+mora config set crew.backend.autonomy full   # one role, persisted in moragent.json
+mora up --yolo                               # every pane opened by this command runs in full
+```
+
+Use `full` / `--yolo` only in a disposable environment (container, VM, throwaway branch) you are fine losing. The first time a CLI opens in a folder it may ask whether you trust it: `mora up` reminds you, and `dispatch` to an Orca pane refuses to send while that dialog is on screen.
+
+## Automatic memory
+
+Every agent session leaves an episodic note on its own. `mora init` installs the capture hooks (skip with `--no-hooks`), and `mora sync --hooks` adds them to an existing project. They call `mora` (or `npx -y moragent` when `mora` is not on your PATH):
+
+- **Claude Code** — a `SessionEnd` hook in `.claude/settings.json` runs `mora memory capture --from claude`.
+- **Codex** — `notify = ["mora", "memory", "capture", "--from", "codex"]` in `.codex/config.toml`, called after each turn.
+
+It never replaces hooks or a `notify` you already have; `mora sync --hooks --dry-run` shows what it would write.
+
+Capture is deterministic (no LLM): it keeps the first request, the last answer, the files edited and a few relevant commands, as **one note per session**. It skips trivial sessions and redacts anything that looks like a secret (`sk-…`, `ghp_…`, `AKIA…`, private keys). A capture error never breaks your agent: it is logged to `.moragent/runs/capture.log`.
+
 ## Plugin for Claude Code and Codex
 
 The same repo is a plugin for both, shipping the MORAGENT skills (lead protocol, worker protocol, specs, memory):
@@ -151,8 +184,9 @@ The same repo is a plugin for both, shipping the MORAGENT skills (lead protocol,
 /plugin marketplace add EduardoMoraga/moragent
 /plugin install moragent@moragent
 
-# Codex — see .codex-plugin/plugin.json
 ```
+
+For Codex, the repo ships `.codex-plugin/plugin.json`, which points at the same skills in `plugin/skills/`.
 
 The skills call the `mora` CLI (falling back to `npx moragent` when it is not installed).
 

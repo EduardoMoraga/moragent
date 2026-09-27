@@ -25,7 +25,10 @@ export default {
       if (mux.alive(pane.handle)) {
         if (!argv.flags['dry-run']) mux.close(pane.handle);
       }
-      else if (!ctx.json) warn(t(`${role}: el panel ya no estaba activo.`, `${role}: pane was already inactive.`));
+      else {
+        if (!argv.flags['dry-run'] && pane.mux === 'headless') mux.close(pane.handle);
+        if (!ctx.json) warn(t(`${role}: el panel ya no estaba activo.`, `${role}: pane was already inactive.`));
+      }
       if (!argv.flags['dry-run']) delete panes[role];
       closed.push(role);
     }

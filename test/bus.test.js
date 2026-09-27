@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createTask, getTask, listTasks, nextId, updateTask } from '../src/bus/tasks.js';
+import { createTask, getTask, listTasks, nextId, reserveTaskId, updateTask } from '../src/bus/tasks.js';
 import { buildEnvelope, writeEnvelope } from '../src/bus/envelope.js';
 import { ensureDir, readText, writeText } from '../src/core/fsx.js';
 import { dirs } from '../src/core/paths.js';
+import { parseDuration } from '../src/bus/wait.js';
 
 function project() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora bus '));
@@ -37,6 +38,22 @@ test('task bus allocates ids, filters and preserves immutable fields', () => {
 test('missing tasks produce a typed error', () => {
   const root = project();
   assert.throws(() => getTask(root, 'T-9999'), (error) => error.code === 'TASK_NOT_FOUND');
+});
+
+test('task ids are reserved exclusively before records are written', () => {
+  const root = project();
+  assert.equal(reserveTaskId(root), 'T-0001');
+  assert.equal(reserveTaskId(root), 'T-0002');
+  assert.equal(nextId(root), 'T-0003');
+  const task = createTask({ root, role: 'backend', body: 'Concurrent work' });
+  assert.equal(task.id, 'T-0003');
+  assert.equal(getTask(root, task.id).body, 'Concurrent work');
+});
+
+test('durations without suffix default to seconds', () => {
+  assert.equal(parseDuration('30', 1), 30000);
+  assert.equal(parseDuration('30ms', 1), 30);
+  assert.equal(parseDuration('2m', 1), 120000);
 });
 
 test('envelope includes mission, spec, acceptance and exit protocol', async () => {

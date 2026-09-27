@@ -5,6 +5,7 @@ import { defaultConfig, PRESETS, DEFAULT_CLI, CLI_IDS, saveConfig } from '../cor
 import { ensureDir, writeIfAbsent, writeText, exists, nowISO, today } from '../core/fsx.js';
 import { which } from '../core/exec.js';
 import { syncProject } from '../core/sync.js';
+import { installHooks } from '../core/hooks.js';
 import { setLang, t, detectLang } from '../core/i18n.js';
 import { ok, info, warn, out, c, json } from '../core/log.js';
 import { MoragentError } from '../core/errors.js';
@@ -56,7 +57,7 @@ export default {
   name: 'init',
   group: 'start',
   summary: { es: 'Convierte esta carpeta en un proyecto agéntico', en: 'Turn this folder into an agentic project' },
-  usage: 'mora init [name] [--preset solo|duo|trio|squad] [--lang es|en] [--goal "…"] [--crew backend=codex,dev=pi] [--yes] [--force]',
+  usage: 'mora init [name] [--preset solo|duo|trio|squad] [--lang es|en] [--goal "…"] [--crew backend=codex,dev=pi] [--no-hooks] [--yes] [--force]',
   async run(argv, ctx) {
     const cwd = path.resolve(typeof argv.flags.dir === 'string' ? argv.flags.dir : process.cwd());
     const existing = findRoot(cwd);
@@ -94,6 +95,7 @@ export default {
     if (answers.goal) cfg.goal = answers.goal;
     scaffold(cwd, cfg);
     const r = await syncProject(cwd, cfg);
+    r.hooks = argv.flags.hooks === false ? [] : installHooks(cwd, r.clis);
 
     if (ctx.json) { json({ ok: true, root: cwd, config: cfg, installed, synced: r }); return 0; }
     out();
@@ -103,6 +105,7 @@ export default {
       out(`   ${has ? c.green('●') : c.yellow('○')} ${role.padEnd(9)} ${m.cli}${has ? '' : c.yellow(t('  (no instalado)', '  (not installed)'))}`);
     }
     ok(t(`Instrucciones: ${r.files.map((f) => path.basename(f)).join(', ')}`, `Instructions: ${r.files.map((f) => path.basename(f)).join(', ')}`));
+    if (r.hooks.length) ok(t('Memoria automática: cada sesión de Claude/Codex deja una nota episódica (--no-hooks para omitir)', 'Automatic memory: every Claude/Codex session leaves an episodic note (--no-hooks to skip)'));
     if (!installed.length) warn(t('No encontré ningún CLI de agentes. Instala al menos uno: npm i -g @anthropic-ai/claude-code', 'No agent CLI found. Install at least one: npm i -g @anthropic-ai/claude-code'));
     out();
     info(t('Siguiente paso:', 'Next:'));

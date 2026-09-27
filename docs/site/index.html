@@ -278,8 +278,9 @@ footer p { color: var(--muted); font-size: 14px; }
 <pre class="code"><span class="k">mora</span> init --preset trio --goal <span class="c">"Online coffee shop"</span>
 <span class="k">mora</span> doctor
 <span class="k">mora</span> plan <span class="c">"Stripe checkout, admin, receipts"</span>
+<span class="k">mora</span> spec status
 <span class="k">mora</span> up
-<span class="k">mora</span> dispatch backend <span class="c">"Orders API"</span> --spec checkout
+<span class="k">mora</span> dispatch backend <span class="c">"Orders API"</span> --spec &lt;slug&gt;
 <span class="k">mora</span> dispatch frontend <span class="c">"Checkout screen"</span>
 <span class="k">mora</span> wait T-0001 T-0002
 <span class="k">mora</span> board
@@ -288,8 +289,8 @@ footer p { color: var(--muted); font-size: 14px; }
       <ol class="steps">
         <li><b>Set up</b><span>A five-question wizard (or flags) writes <code>.moragent/</code> and one managed block in <code>AGENTS.md</code>, <code>CLAUDE.md</code>, <code>GEMINI.md</code>.</span></li>
         <li><b>Check</b><span><code>doctor</code> lists Node, each CLI with its version, multiplexers and your vault — with the one-line fix for anything missing.</span></li>
-        <li><b>Plan</b><span><code>plan</code> sizes the idea (S/M/L/XL), recommends a crew and creates the first spec.</span></li>
-        <li><b>Run</b><span><code>up</code> opens one pane per role; <code>dispatch</code> writes a task envelope and types one line into the right pane.</span></li>
+        <li><b>Plan</b><span><code>plan</code> sizes the idea (S/M/L/XL), recommends a crew and creates the first spec; <code>spec status</code> shows its slug and phase.</span></li>
+        <li><b>Run</b><span><code>up</code> opens one pane per role; <code>dispatch</code> writes a task envelope and types one line into the right pane. Add <code>--dry-run</code> to rehearse.</span></li>
         <li><b>Integrate</b><span><code>wait</code> blocks until tasks finish; results become episodic memory; durable decisions go canonical.</span></li>
       </ol>
     </div>
@@ -316,6 +317,20 @@ footer p { color: var(--muted); font-size: 14px; }
       <div class="card"><span class="tag">sdd</span><h3>Phases the binary decides</h3><p><code>explore → propose → spec → design → tasks → apply → verify → archive</code>, derived from the files. <code>mora spec next</code>.</p></div>
       <div class="card"><span class="tag">brain</span><h3>Obsidian second brain</h3><p><code>mora brain link</code> puts <code>.moragent/</code> in your vault. Frontmatter, <code>[[wikilinks]]</code> and a generated <code>Home.md</code>.</p></div>
       <div class="card"><span class="tag">plugin</span><h3>Claude Code &amp; Codex</h3><p>The repo is a plugin for both: lead, worker, spec and memory skills that call <code>mora</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="safety">
+  <div class="wrap">
+    <p class="kicker">Autonomy &amp; safety</p>
+    <h2>Workers that don't stall — without handing over the keys.</h2>
+    <p class="sub">A worker that stops to ask permission in a pane nobody is watching blocks the crew. Each role gets an autonomy level in <code>crew.&lt;role&gt;.autonomy</code>.</p>
+    <div class="cards">
+      <div class="card"><span class="tag">auto · default</span><h3>Edit and report back</h3><p>Edits in the repo plus <code>mora</code>, <code>node</code>, <code>npm test</code>, <code>git status</code>/<code>diff</code>. Codex keeps its workspace sandbox; Claude asks for anything else.</p></div>
+      <div class="card"><span class="tag">full · --yolo</span><h3>No prompts, no sandbox</h3><p><code>mora up --yolo</code> for one session, or <code>mora config set crew.&lt;role&gt;.autonomy full</code>. Only in a disposable environment.</p></div>
+      <div class="card"><span class="tag">ask</span><h3>The CLI's own prompts</h3><p>Nothing is pre-approved. Headless runs are never <code>ask</code>, because nobody could answer them.</p></div>
+      <div class="card"><span class="tag">automatic memory</span><h3>Every session leaves a note</h3><p><code>mora init</code> (or <code>mora sync --hooks</code>) installs a Claude Code <code>SessionEnd</code> hook and Codex <code>notify</code>: one episodic note per session, no LLM, with secrets redacted.</p></div>
     </div>
   </div>
 </section>

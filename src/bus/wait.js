@@ -5,7 +5,7 @@ export const parseDuration = (value, fallback) => {
   if (value == null || value === true) return fallback;
   const match = String(value).trim().match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h)?$/i);
   if (!match) return fallback;
-  const scale = { ms: 1, s: 1000, m: 60000, h: 3600000 }[match[2]?.toLowerCase() || 'ms'];
+  const scale = { ms: 1, s: 1000, m: 60000, h: 3600000 }[match[2]?.toLowerCase() || 's'];
   return Number(match[1]) * scale;
 };
 

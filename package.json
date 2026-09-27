@@ -7,10 +7,12 @@
     "moragent": "bin/mora.js",
     "mora": "bin/mora.js"
   },
-  "files": ["bin", "src", "templates", "plugin", "install.sh", "install.ps1", "docs/ARCHITECTURE.md", "README.md", "README.es.md", "LICENSE"],
+  "files": ["bin", "src", "templates", "plugin", ".claude-plugin", ".codex-plugin", "install.sh", "install.ps1", "docs", "examples", "README.md", "README.es.md", "LICENSE"],
   "engines": { "node": ">=18" },
   "scripts": {
     "build": "node scripts/build-plugin.js",
+    "prepack": "node scripts/build-plugin.js",
+    "pack:smoke": "bash scripts/pack-smoke.sh",
     "test": "node scripts/test.js",
     "start": "node bin/mora.js"
   },

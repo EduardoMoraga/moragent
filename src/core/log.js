@@ -1,4 +1,5 @@
-const enabled = () => !process.env.NO_COLOR && (process.stdout.isTTY || process.env.FORCE_COLOR);
+const forced = () => process.env.FORCE_COLOR !== undefined && process.env.FORCE_COLOR !== '0' && process.env.FORCE_COLOR !== 'false';
+const enabled = () => !process.env.NO_COLOR && process.env.FORCE_COLOR !== '0' && (process.stdout.isTTY || forced());
 
 const wrap = (open, close) => (s) => (enabled() ? `\x1b[${open}m${s}\x1b[${close}m` : String(s));
 

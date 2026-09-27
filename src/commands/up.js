@@ -8,6 +8,8 @@ import { getAdapter } from '../crew/adapters.js';
 import { loadPanes, savePanes } from '../crew/panes.js';
 import { detectMux, getMux } from '../mux/index.js';
 
+export const flagOn = (value) => value !== undefined && value !== false && value !== 'false' && value !== '0';
+
 export function isCurrentLead(cfg, env = process.env) {
   if (env.MORAGENT_ROLE) return env.MORAGENT_ROLE === 'lead';
   const cli = env.CLAUDECODE || env.CLAUDE_CODE_ENTRYPOINT ? 'claude'
@@ -21,14 +23,17 @@ export default {
   name: 'up',
   group: 'crew',
   summary: { es: 'Abre paneles para el equipo', en: 'Open panes for the crew' },
-  usage: 'mora up [roles…] [--mux orca|herdr|tmux|headless] [--with-lead] [--dry-run] [--json]',
+  usage: 'mora up [roles…] [--mux orca|herdr|tmux|headless] [--with-lead] [--yolo] [--dry-run] [--json]',
   async run(argv, ctx) {
     const root = ctx.root || requireRoot();
     const cfg = ctx.config || loadConfig(root);
     const positionals = [...argv._];
-    if (typeof argv.flags['with-lead'] === 'string') positionals.push(argv.flags['with-lead']);
+    if (typeof argv.flags['with-lead'] === 'string' && cfg.crew?.[argv.flags['with-lead']]) positionals.push(argv.flags['with-lead']);
+    if (typeof argv.flags.yolo === 'string' && cfg.crew?.[argv.flags.yolo]) positionals.push(argv.flags.yolo);
     const requested = positionals.length ? positionals : Object.keys(cfg.crew || {});
-    const leadCurrent = !argv.flags['with-lead'] && requested.includes('lead') && isCurrentLead(cfg);
+    const withLead = flagOn(argv.flags['with-lead']);
+    const yolo = flagOn(argv.flags.yolo);
+    const leadCurrent = !withLead && requested.includes('lead') && isCurrentLead(cfg);
     const roles = requested.filter((role) => role !== 'lead' || !leadCurrent);
     for (const role of requested) if (!cfg.crew?.[role]) throw new MoragentError('UNKNOWN_ROLE', t(`Rol desconocido: ${role}`, `Unknown role: ${role}`));
     const muxName = detectMux(typeof argv.flags.mux === 'string' ? argv.flags.mux : cfg.mux);
@@ -44,18 +49,32 @@ export default {
         opened.push({ role, cli: member.cli, mux: muxName, handle: null, status: 'missing' });
         continue;
       }
-      if (panes[role]?.mux === muxName && mux.alive(panes[role].handle)) {
+      const autonomy = yolo ? 'full' : member.autonomy || 'auto';
+      const command = adapter.interactive({ root, role, member, autonomy });
+      const current = panes[role];
+      const alive = current?.mux === muxName && mux.alive(current.handle);
+      const sameSession = alive
+        && current.cli === member.cli
+        && (current.autonomy || 'auto') === autonomy;
+      if (sameSession) {
         opened.push({ role, cli: member.cli, mux: muxName, handle: panes[role].handle, status: 'existing' });
         anchor = panes[role].handle;
         continue;
       }
-      const command = adapter.interactive({ root, role, member });
-      if (argv.flags['dry-run']) {
-        opened.push({ role, cli: member.cli, mux: muxName, handle: null, command, status: 'dry-run' });
+      if (alive && argv.flags['dry-run']) {
+        opened.push({ role, cli: member.cli, mux: muxName, handle: current.handle, command, autonomy, status: 'restart' });
         continue;
       }
-      const result = mux.spawn({ root, role, title: member.title || role, command, cwd: root, anchor, member, adapter });
-      panes[role] = { mux: muxName, handle: result.handle, cli: member.cli, startedAt: nowISO() };
+      if (alive) {
+        mux.close(current.handle);
+        delete panes[role];
+      }
+      if (argv.flags['dry-run']) {
+        opened.push({ role, cli: member.cli, mux: muxName, handle: null, command, autonomy, status: 'dry-run' });
+        continue;
+      }
+      const result = mux.spawn({ root, role, title: member.title || role, command, cwd: root, anchor, member, adapter, autonomy });
+      panes[role] = { mux: muxName, handle: result.handle, cli: member.cli, autonomy, startedAt: nowISO() };
       opened.push({ role, cli: member.cli, mux: muxName, handle: result.handle, status: 'opened', session: result.session });
       anchor = result.handle;
     }
@@ -65,6 +84,9 @@ export default {
     out(t('ROL       CLI          PANEL', 'ROLE      CLI          PANE'));
     for (const item of opened) out(`${item.role.padEnd(10)} ${item.cli.padEnd(12)} ${item.handle || item.status}`);
     if (leadCurrent) info(t('El lead usa la terminal actual. Usa --with-lead para abrir otro panel.', 'The lead uses the current terminal. Use --with-lead to open another pane.'));
+    if (!argv.flags['dry-run'] && muxName !== 'headless' && opened.some((item) => item.status === 'opened')) {
+      info(t('Si un panel pregunta si confías en esta carpeta, acepta el diálogo antes de despachar tareas.', 'If a pane asks whether you trust this folder, accept the dialog before dispatching tasks.'));
+    }
     const session = opened.find((item) => item.session)?.session;
     if (session) info(`tmux attach -t ${session}`);
     return 0;

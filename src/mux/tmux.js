@@ -1,6 +1,6 @@
 import { which, run } from '../core/exec.js';
 import { slugify } from '../core/fsx.js';
-import { checked } from './util.js';
+import { checked, paneCommand } from './util.js';
 
 const call = (args, opts) => checked(run('tmux', args, opts), `tmux ${args[0]}`);
 const sessionName = (root) => `moragent-${slugify(root.split(/[\\/]/).filter(Boolean).at(-1) || 'project')}`;
@@ -16,12 +16,12 @@ function ensureSession(root, cwd) {
 export default {
   name: 'tmux',
   available: () => !!which('tmux'),
-  spawn({ root, command, cwd = root, anchor, direction = 'horizontal' }) {
+  spawn({ root, role, command, cwd = root, anchor, direction = 'horizontal' }) {
     const session = ensureSession(root, cwd);
     const target = anchor || (session ? `${session}:0` : undefined);
     const args = ['split-window', direction === 'vertical' ? '-v' : '-h', '-P', '-F', '#{pane_id}', '-c', cwd];
     if (target) args.push('-t', target);
-    if (command) args.push(command);
+    if (command) args.push(paneCommand({ root, role, command }));
     const handle = call(args, { cwd }).stdout.trim().split(/\r?\n/).at(-1);
     if (target) run('tmux', ['select-layout', '-t', target, 'tiled']);
     return { handle, session };

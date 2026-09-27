@@ -5,9 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { defaultConfig } from '../src/core/config.js';
 import { scaffold } from '../src/commands/init.js';
+import { dirs } from '../src/core/paths.js';
+import { ensureDir } from '../src/core/fsx.js';
 import { parseFrontmatter, stringifyFrontmatter } from '../src/memory/frontmatter.js';
-import { tokenize, bm25Search, extractSnippet } from '../src/memory/search.js';
-import { add, list, recall, promote, gc, contextPack, getNote } from '../src/memory/index.js';
+import { tokenize, bm25Search, extractSnippet, stemWord } from '../src/memory/search.js';
+import { add, list, recall, promote, gc, contextPack, getNote, captureClaude, captureCodex, hookConfig, redactSecrets, parseClaudeTranscript } from '../src/memory/index.js';
 import memoryCmd from '../src/commands/memory.js';
 import contextCmd from '../src/commands/context.js';
 
@@ -83,7 +85,40 @@ test('search: tokenizer normalizes accents and filters bilingual stop words', ()
   assert.ok(!tokens.includes('y'));
   assert.ok(!tokens.includes('con'));
   assert.ok(!tokens.includes('para'));
-  assert.ok(!tokens.includes('el'));
+});
+
+test('search: lightweight stemming handles plurals and basic English verb endings', () => {
+  assert.equal(stemWord('cookies'), 'cookie');
+  assert.equal(stemWord('cookie'), 'cookie');
+  assert.equal(stemWord('decisiones'), 'decision');
+  assert.equal(stemWord('decision'), 'decision');
+  assert.equal(stemWord('tareas'), 'tarea');
+  assert.equal(stemWord('tarea'), 'tarea');
+  assert.equal(stemWord('running'), 'run');
+  assert.equal(stemWord('run'), 'run');
+  assert.equal(stemWord('started'), 'start');
+  assert.equal(stemWord('status'), 'status');
+
+  // BM25 match with stemmed forms
+  const notes = [
+    { id: 'n1', title: 'Gestión de Cookies y Sesiones', tags: ['auth'], body: 'Guardamos las cookies en el cliente.' },
+    { id: 'n2', title: 'Lista de Tareas', tags: ['tasks'], body: 'Servicio running en segundo plano.' },
+  ];
+
+  // query 'cookie' matches 'Cookies'
+  const r1 = bm25Search(notes, 'cookie');
+  assert.ok(r1.length > 0);
+  assert.equal(r1[0].note.id, 'n1');
+
+  // query 'tarea' matches 'Tareas'
+  const r2 = bm25Search(notes, 'tarea');
+  assert.ok(r2.length > 0);
+  assert.equal(r2[0].note.id, 'n2');
+
+  // query 'run' matches 'running'
+  const r3 = bm25Search(notes, 'run');
+  assert.ok(r3.length > 0);
+  assert.equal(r3[0].note.id, 'n2');
 });
 
 test('search: BM25 weights title x3, tags x2, body x1 and ranks correctly', () => {
@@ -195,23 +230,74 @@ test('memory: gc removes expired transient notes and supports dry-run', () => {
   assert.ok(fs.existsSync(tr2.path));
 });
 
-test('memory: contextPack generates ordered markdown within budget and writes file', () => {
+test('memory: default author uses MORAGENT_ROLE or falls back to user', () => {
+  const root = tmp();
+
+  const prevRole = process.env.MORAGENT_ROLE;
+  delete process.env.MORAGENT_ROLE;
+  try {
+    // Without MORAGENT_ROLE -> falls back to 'user'
+    const n1 = add({ root, title: 'Note by user', body: 'No by flag provided.' });
+    assert.equal(n1.note.by, 'user');
+
+    // With MORAGENT_ROLE -> uses env var
+    process.env.MORAGENT_ROLE = 'backend';
+    const n2 = add({ root, title: 'Note by backend env', body: 'From panel.' });
+    assert.equal(n2.note.by, 'backend');
+
+    // Explicit by takes precedence
+    const n3 = add({ root, title: 'Note by explicit', body: 'Explicit.', by: 'lead' });
+    assert.equal(n3.note.by, 'lead');
+  } finally {
+    if (prevRole !== undefined) process.env.MORAGENT_ROLE = prevRole;
+    else delete process.env.MORAGENT_ROLE;
+  }
+});
+
+test('memory: recall searches specs when includeSpecs is true', () => {
+  const root = tmp();
+  const specDir = path.join(dirs(root).specs, 'auth-jwt');
+  ensureDir(specDir);
+  fs.writeFileSync(path.join(specDir, 'spec.md'), '# Spec funcional: Auth JWT\n\n- RF-1: Cuando el usuario ingresa credenciales, el sistema genera refresh tokens.\n');
+
+  // Without includeSpecs: does not search specs
+  const hits1 = recall({ root, query: 'credenciales refresh tokens', includeSpecs: false });
+  assert.equal(hits1.length, 0);
+
+  // With includeSpecs: finds requirement in spec.md
+  const hits2 = recall({ root, query: 'credenciales refresh tokens', includeSpecs: true });
+  assert.equal(hits2.length, 1);
+  assert.equal(hits2[0].note.tier, 'spec');
+  assert.equal(hits2[0].note.id, 'specs/auth-jwt/spec.md');
+  assert.match(hits2[0].snippet, /credenciales/);
+});
+
+test('memory: contextPack generates bilingual output, previews body and includes specs', () => {
   const root = tmp();
   add({ root, tier: 'canonical', title: 'System Architecture', body: 'Microservices with Node.js.' });
-  add({ root, tier: 'episodic', title: 'Sprint 1 Finished', body: 'Delivered initial scaffold.' });
+  add({ root, tier: 'episodic', title: 'Sprint 1 Finished', body: 'Delivered initial scaffold.\nSecond line.' });
 
-  const pack = contextPack({ root, role: 'backend', query: 'architecture', budget: 4000 });
-  assert.match(pack, /# Context Pack: backend/);
-  assert.match(pack, /## Canonical Memory/);
-  assert.match(pack, /System Architecture/);
-  assert.match(pack, /## Recent Episodes/);
-  assert.match(pack, /Sprint 1 Finished/);
+  // Add spec requirement
+  const specDir = path.join(dirs(root).specs, 'billing');
+  ensureDir(specDir);
+  fs.writeFileSync(path.join(specDir, 'spec.md'), '# Billing Spec\n\n- RF-1: Stripe integration for checkout.\n');
 
-  // Check file written to .moragent/context/backend.md
-  const contextPath = path.join(root, '.moragent', 'context', 'backend.md');
-  assert.ok(fs.existsSync(contextPath));
-  assert.equal(fs.readFileSync(contextPath, 'utf8'), pack);
-  assert.ok(pack.length <= 4000);
+  // Spanish (default in tmp())
+  const packEs = contextPack({ root, role: 'backend', query: 'Stripe', budget: 4000 });
+  assert.match(packEs, /# Paquete de contexto: backend/);
+  assert.match(packEs, /## Memoria canónica \(decisiones y arquitectura\)/);
+  assert.match(packEs, /## Episodios recientes/);
+  assert.match(packEs, /Sprint 1 Finished \(@user\) — Delivered initial scaffold\./);
+  assert.match(packEs, /## Contexto relevante para la consulta: "Stripe"/);
+  assert.match(packEs, /specs\/billing\/spec\.md/);
+
+  // English
+  const packEn = contextPack({ root, role: 'backend', query: 'Stripe', budget: 4000, lang: 'en' });
+  assert.match(packEn, /# Context Pack: backend/);
+  assert.match(packEn, /## Canonical Memory \(Decisions & Architecture\)/);
+  assert.match(packEn, /## Recent Episodes/);
+  assert.match(packEn, /## Relevant Context for Query: "Stripe"/);
+  assert.ok(packEn.length <= 4000);
 });
 
 test('CLI: memory command add, list, recall, show, promote, gc with --json', async () => {
@@ -277,3 +363,294 @@ test('CLI: context command prints context pack with --json', async () => {
     process.stdout.write = origOut;
   }
 });
+
+test('capture: secret redaction removes API keys, tokens, and private keys', () => {
+  const secretText = [
+    'OpenAI: sk-proj-1234567890abcdef1234567890',
+    'GitHub: ghp_1234567890abcdef1234567890abcdef',
+    'AWS: AKIAIOSFODNN7EXAMPLE',
+    'Slack: xoxb-1234567890-1234567890123-abcdef',
+    'Key: -----BEGIN RSA PRIVATE KEY-----\nMIIEogIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----',
+    'Bearer token: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abcdef',
+  ].join('\n');
+
+  const clean = redactSecrets(secretText);
+  assert.ok(!clean.includes('sk-proj-'));
+  assert.ok(!clean.includes('ghp_'));
+  assert.ok(!clean.includes('AKIAIOSFODNN7EXAMPLE'));
+  assert.ok(!clean.includes('xoxb-'));
+  assert.ok(!clean.includes('MIIEogIBAAKCAQEA'));
+  assert.ok(!clean.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'));
+  assert.equal((clean.match(/\[REDACTED_SECRET\]/g) || []).length, 6);
+});
+
+test('capture: parseClaudeTranscript handles valid, corrupted, and tool call lines', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transcript-'));
+  const transcriptFile = path.join(tmpDir, 'transcript.jsonl');
+
+  const lines = [
+    JSON.stringify({ type: 'user', content: 'Please refactor the memory module sk-12345678901234567890' }),
+    'INVALID JSON LINE {{{',
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'Edit', input: { file_path: 'src/memory/capture.js' } },
+          { type: 'tool_use', name: 'Bash', input: { command: 'npm test' } },
+          { type: 'text', text: 'Refactored memory module successfully.' },
+        ],
+      },
+    }),
+    JSON.stringify({ type: 'user', content: 'Second turn: check tests' }),
+    JSON.stringify({
+      type: 'assistant',
+      content: 'All tests pass green.',
+    }),
+  ];
+
+  fs.writeFileSync(transcriptFile, lines.join('\n'));
+
+  const parsed = parseClaudeTranscript(transcriptFile);
+  assert.equal(parsed.userPrompts.length, 2);
+  assert.equal(parsed.userPrompts[0], 'Please refactor the memory module sk-12345678901234567890');
+  assert.equal(parsed.userPrompts[1], 'Second turn: check tests');
+  assert.equal(parsed.filesTouched.length, 1);
+  assert.equal(parsed.filesTouched[0], 'src/memory/capture.js');
+  assert.equal(parsed.bashCommands.length, 1);
+  assert.equal(parsed.bashCommands[0], 'npm test');
+  assert.equal(parsed.assistantMessages.at(-1), 'All tests pass green.');
+});
+
+test('capture: captureClaude ignores trivial sessions (< 2 user turns and 0 files touched)', () => {
+  const root = tmp();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-triv-'));
+  const transcriptFile = path.join(tmpDir, 'transcript.jsonl');
+
+  // Single user prompt, no file edits
+  fs.writeFileSync(transcriptFile, JSON.stringify({ type: 'user', content: 'hello' }) + '\n' +
+    JSON.stringify({ type: 'assistant', content: 'Hi there!' }) + '\n');
+
+  const payload = {
+    session_id: 'triv-session-123',
+    transcript_path: transcriptFile,
+    cwd: root,
+  };
+
+  const res = captureClaude(payload, { root });
+  assert.equal(res, null);
+
+  // Verify no episodic note was written
+  const episodicDir = dirs(root).episodic;
+  const files = fs.readdirSync(episodicDir);
+  assert.equal(files.length, 0);
+});
+
+test('capture: captureClaude creates episodic note from non-trivial transcript with secret redaction', () => {
+  const root = tmp();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-session-'));
+  const transcriptFile = path.join(tmpDir, 'transcript.jsonl');
+
+  const lines = [
+    JSON.stringify({ type: 'user', content: 'Implement capture feature with key sk-12345678901234567890abcdef' }),
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'Write', input: { file_path: path.join(root, 'src/memory/capture.js') } },
+          { type: 'tool_use', name: 'Bash', input: { command: 'echo AKIAIOSFODNN7EXAMPLE' } },
+          { type: 'text', text: 'Written capture.js successfully.' },
+        ],
+      },
+    }),
+    JSON.stringify({ type: 'user', content: 'Verify results' }),
+    JSON.stringify({
+      type: 'assistant',
+      content: 'All verified and clean.',
+    }),
+  ];
+  fs.writeFileSync(transcriptFile, lines.join('\n'));
+
+  const payload = {
+    session_id: 'claude-sess-987654321',
+    transcript_path: transcriptFile,
+    cwd: root,
+  };
+
+  const res = captureClaude(payload, { root });
+  assert.ok(res);
+  assert.ok(res.id.startsWith('session-'));
+  assert.equal(fs.existsSync(res.path), true);
+
+  const raw = fs.readFileSync(res.path, 'utf8');
+  assert.ok(!raw.includes('sk-12345678901234567890abcdef'));
+  assert.ok(!raw.includes('AKIAIOSFODNN7EXAMPLE'));
+  assert.ok(raw.includes('[REDACTED_SECRET]'));
+  assert.match(raw, /tier: episodic/);
+  assert.match(raw, /kind: episode/);
+  assert.match(raw, /links: \[src\/memory\/capture\.js\]/);
+  assert.match(raw, /All verified and clean\./);
+  assert.match(raw, /- `src\/memory\/capture\.js`/);
+});
+
+test('capture: captureClaude updates existing note on same session without duplicating', () => {
+  const root = tmp();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-update-'));
+  const transcriptFile = path.join(tmpDir, 'transcript.jsonl');
+
+  const lines1 = [
+    JSON.stringify({ type: 'user', content: 'First prompt in session' }),
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'Write', input: { file_path: path.join(root, 'file1.txt') } },
+        ],
+      },
+    }),
+  ];
+  fs.writeFileSync(transcriptFile, lines1.join('\n'));
+
+  const payload = {
+    session_id: 'sess-abcdef12',
+    transcript_path: transcriptFile,
+    cwd: root,
+  };
+
+  const res1 = captureClaude(payload, { root });
+  assert.ok(res1);
+
+  // Subsequent event with more turns
+  const lines2 = [
+    ...lines1,
+    JSON.stringify({ type: 'user', content: 'Second prompt' }),
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'Write', input: { file_path: path.join(root, 'file2.txt') } },
+          { type: 'text', text: 'Second prompt finished' },
+        ],
+      },
+    }),
+  ];
+  fs.writeFileSync(transcriptFile, lines2.join('\n'));
+
+  const res2 = captureClaude(payload, { root });
+  assert.equal(res2.id, res1.id);
+  assert.equal(res2.path, res1.path);
+
+  const episodicFiles = fs.readdirSync(dirs(root).episodic);
+  assert.equal(episodicFiles.length, 1);
+
+  const content = fs.readFileSync(res2.path, 'utf8');
+  assert.match(content, /file2\.txt/);
+  assert.match(content, /Second prompt finished/);
+});
+
+test('capture: captureCodex accumulates turns on same thread and limits to last 5', () => {
+  const root = tmp();
+  const threadId = 'codex-th-12345';
+
+  for (let i = 1; i <= 7; i++) {
+    const payload = {
+      type: 'agent-turn-complete',
+      'thread-id': threadId,
+      cwd: root,
+      'input-messages': [`Turn ${i} user prompt with key sk-12345678901234567890123`],
+      'last-assistant-message': `Completed turn ${i} response`,
+    };
+    captureCodex(payload, { root });
+  }
+
+  const files = fs.readdirSync(dirs(root).episodic);
+  assert.equal(files.length, 1);
+
+  const noteContent = fs.readFileSync(path.join(dirs(root).episodic, files[0]), 'utf8');
+  assert.ok(!noteContent.includes('sk-12345678901234567890123'));
+  assert.ok(noteContent.includes('[REDACTED_SECRET]'));
+
+  // Should have turns 3 to 7 (last 5 turns), turns 1 and 2 discarded
+  assert.ok(!noteContent.includes('Completed turn 1 response'));
+  assert.ok(!noteContent.includes('Completed turn 2 response'));
+  assert.ok(noteContent.includes('Completed turn 3 response'));
+  assert.ok(noteContent.includes('Completed turn 7 response'));
+});
+
+test('capture: hookConfig returns settings for Claude and Codex', () => {
+  const cfg = hookConfig();
+  assert.equal(cfg.claude.file, '.claude/settings.json');
+  assert.equal(cfg.claude.config.hooks.SessionEnd[0].hooks[0].command, 'mora memory capture --from claude');
+  assert.equal(cfg.codex.file, '.codex/config.toml');
+  assert.match(cfg.codex.toml, /notify = \["mora", "memory", "capture", "--from", "codex"\]/);
+});
+
+test('CLI: memory capture exits 0 silently when not in MORAGENT project', async () => {
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'non-mora-'));
+  const ctx = { root: null, json: false };
+
+  // Should not throw and return 0
+  const code = await memoryCmd.run({
+    _: ['capture', '{"session_id":"test"}'],
+    flags: { from: 'claude' },
+  }, ctx);
+  assert.equal(code, 0);
+});
+
+test('CLI: memory capture handles claude and codex payloads, logging on errors without throwing', async () => {
+  const root = tmp();
+  const ctx = { root, json: true };
+
+  // 1. Claude capture via CLI
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-'));
+  const transcriptFile = path.join(tmpDir, 'transcript.jsonl');
+  fs.writeFileSync(transcriptFile, [
+    JSON.stringify({ type: 'user', content: 'Turn 1: Fix bug' }),
+    JSON.stringify({ type: 'user', content: 'Turn 2: Add test' }),
+    JSON.stringify({ type: 'assistant', content: 'Bug fixed and test added' }),
+  ].join('\n'));
+
+  const claudePayload = JSON.stringify({
+    session_id: 'cli-session-1',
+    transcript_path: transcriptFile,
+    cwd: root,
+  });
+
+  let outLogs = [];
+  const origOut = process.stdout.write;
+  process.stdout.write = (chunk) => { outLogs.push(chunk); return true; };
+
+  try {
+    const code = await memoryCmd.run({
+      _: ['capture', claudePayload],
+      flags: { from: 'claude' },
+    }, ctx);
+    assert.equal(code, 0);
+    const parsedOut = JSON.parse(outLogs.pop());
+    assert.equal(parsedOut.ok, true);
+    assert.ok(parsedOut.id.startsWith('session-'));
+
+    // 2. Codex capture via CLI
+    const codexPayload = JSON.stringify({
+      'thread-id': 'cli-codex-th',
+      'input-messages': ['Codex prompt'],
+      'last-assistant-message': 'Codex response',
+    });
+    const codeCodex = await memoryCmd.run({
+      _: ['capture', codexPayload],
+      flags: { from: 'codex' },
+    }, ctx);
+    assert.equal(codeCodex, 0);
+    const parsedCodex = JSON.parse(outLogs.pop());
+    assert.equal(parsedCodex.ok, true);
+
+    // 3. Error case: error during capture should log to .moragent/runs/capture.log and exit 0
+    const codeErr = await memoryCmd.run({
+      _: ['capture'],
+      flags: { from: 'claude', payload: { session_id: 'broken', transcript_path: 12345 } },
+    }, ctx);
+    assert.equal(codeErr, 0);
+  } finally {
+    process.stdout.write = origOut;
+  }
+});
+

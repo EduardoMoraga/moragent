@@ -1,5 +1,18 @@
+import { shq } from '../core/exec.js';
 import { MoragentError } from '../core/errors.js';
 import { t } from '../core/i18n.js';
+
+export function paneCommand({ root, role, command, platform = process.platform }) {
+  if (!command) return '';
+  if (platform === 'win32') {
+    const cd = root ? `cd /d "${String(root).replace(/"/g, '""')}" && ` : '';
+    const env = role ? `set "MORAGENT_ROLE=${String(role).replace(/"/g, '')}" && ` : '';
+    return `${cd}${env}${command}`;
+  }
+  const cd = root ? `cd ${shq(root)} && ` : '';
+  const env = role ? `MORAGENT_ROLE=${shq(role)} ` : '';
+  return `${cd}${env}${command}`;
+}
 
 export function checked(result, label) {
   if (result.code === 0) return result;

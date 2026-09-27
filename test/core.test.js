@@ -92,3 +92,22 @@ test('exec seam replaces run()', () => {
   assert.equal(run('orca', ['terminal', 'list']).stdout, 'orca terminal list');
   resetExec();
 });
+
+test('hooks merge into existing Claude settings and Codex config without overriding', async () => {
+  const { installClaudeHook, installCodexHook } = await import('../src/core/hooks.js');
+  const root = tmp();
+  fs.mkdirSync(path.join(root, '.claude'));
+  fs.writeFileSync(path.join(root, '.claude', 'settings.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] } }));
+  assert.ok(installClaudeHook(root));
+  assert.equal(installClaudeHook(root), null, 'idempotent');
+  const s = JSON.parse(fs.readFileSync(path.join(root, '.claude', 'settings.json'), 'utf8'));
+  assert.equal(s.hooks.Stop[0].hooks[0].command, 'say done');
+  assert.match(s.hooks.SessionEnd[0].hooks[0].command, /memory capture --from claude/);
+
+  fs.mkdirSync(path.join(root, '.codex'));
+  fs.writeFileSync(path.join(root, '.codex', 'config.toml'), 'model = "x"\n\n[mcp_servers.a]\ncommand = "a"\n');
+  assert.ok(installCodexHook(root));
+  const toml = fs.readFileSync(path.join(root, '.codex', 'config.toml'), 'utf8');
+  assert.ok(toml.indexOf('notify') < toml.indexOf('[mcp_servers.a]'), 'notify stays top-level');
+  assert.equal(installCodexHook(root), null, 'never overrides an existing notify');
+});

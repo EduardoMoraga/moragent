@@ -24,7 +24,7 @@ export default {
     const query = typeof argv.flags.query === 'string' ? argv.flags.query : '';
     const budget = argv.flags.budget ? Number(argv.flags.budget) : 6000;
 
-    const pack = contextPack({ root, role, query, budget });
+    const pack = contextPack({ root, role, query, budget, lang: ctx.lang });
 
     if (ctx.json) {
       json({

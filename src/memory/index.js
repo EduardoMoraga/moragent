@@ -5,7 +5,7 @@ import { loadConfig } from '../core/config.js';
 import { ensureDir, exists, readText, writeText, listFiles, slugify, today, nowISO } from '../core/fsx.js';
 import { MoragentError } from '../core/errors.js';
 import { flagList } from '../core/args.js';
-import { t } from '../core/i18n.js';
+import { t, setLang, getLang } from '../core/i18n.js';
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter.js';
 import { bm25Search } from './search.js';
 
@@ -40,7 +40,7 @@ export function add({
   body = '',
   tags = [],
   links = [],
-  by = 'helper',
+  by,
 } = {}) {
   const r = root || requireRoot();
   if (!title || !String(title).trim()) {
@@ -58,6 +58,7 @@ export function add({
   const actualKind = kind || defaultKind(tier);
   const tagList = Array.isArray(tags) ? tags : flagList(tags);
   const linkList = Array.isArray(links) ? links : flagList(links);
+  const actualBy = by || process.env.MORAGENT_ROLE || 'user';
 
   const data = {
     id,
@@ -66,7 +67,7 @@ export function add({
     title: String(title).trim(),
     tags: tagList,
     links: linkList,
-    by: String(by || 'helper'),
+    by: String(actualBy),
     created: nowISO(),
   };
 
@@ -155,15 +156,57 @@ export function list({ root, tier, limit } = {}) {
   return notes;
 }
 
-export function recall({ root, query, tiers, limit = 8 } = {}) {
+export function listSpecsDocs(root) {
+  const r = root || requireRoot();
+  const specsDir = dirs(r).specs;
+  if (!exists(specsDir)) return [];
+
+  const docs = [];
+  const specFiles = ['proposal.md', 'spec.md', 'design.md'];
+
+  for (const ent of fs.readdirSync(specsDir, { withFileTypes: true })) {
+    if (!ent.isDirectory()) continue;
+    const slug = ent.name;
+    const folder = path.join(specsDir, slug);
+
+    for (const f of specFiles) {
+      const p = path.join(folder, f);
+      if (exists(p)) {
+        const text = readText(p);
+        if (text && text.trim()) {
+          const kindName = f.replace('.md', '');
+          docs.push({
+            id: `specs/${slug}/${f}`,
+            tier: 'spec',
+            kind: 'spec',
+            title: `${slug}: ${kindName}`,
+            tags: [slug, 'spec', kindName],
+            links: [slug],
+            body: text,
+            path: p,
+          });
+        }
+      }
+    }
+  }
+
+  return docs;
+}
+
+export function recall({ root, query, tiers, limit = 8, includeSpecs = false } = {}) {
   const r = root || requireRoot();
   if (!query || !String(query).trim()) return [];
 
   const tierList = tiers ? (Array.isArray(tiers) ? tiers : [tiers]) : TIERS;
   const allNotes = list({ root: r });
-  const filtered = allNotes.filter((n) => tierList.includes(n.tier));
+  let candidateNotes = allNotes.filter((n) => tierList.includes(n.tier));
 
-  return bm25Search(filtered, query, { limit });
+  if (includeSpecs || tierList.includes('spec')) {
+    const specDocs = listSpecsDocs(r);
+    candidateNotes = candidateNotes.concat(specDocs);
+  }
+
+  return bm25Search(candidateNotes, query, { limit });
 }
 
 export function promote({ root, id, kind = 'decision' } = {}) {
@@ -220,7 +263,7 @@ export function promote({ root, id, kind = 'decision' } = {}) {
     body: `Promoted note [[${newId}]] from ${note.tier} to canonical. Original ID: ${note.id}.`,
     tags: ['promoted', ...(note.tags || [])],
     links: [newId],
-    by: note.by || 'helper',
+    by: note.by || process.env.MORAGENT_ROLE || 'user',
   });
 
   return { ...updatedData, path: newPath };
@@ -255,10 +298,13 @@ export function gc({ root, days, dryRun = false } = {}) {
   return { removed, count: removed.length, dryRun: !!dryRun };
 }
 
-export function contextPack({ root, role = 'agent', query = '', budget = 6000 } = {}) {
+export function contextPack({ root, role = 'agent', query = '', budget = 6000, includeSpecs = true, lang } = {}) {
   const r = root || requireRoot();
   let cfg = null;
   try { cfg = loadConfig(r); } catch { /* default config */ }
+
+  const currentLang = lang || cfg?.lang || getLang();
+  setLang(currentLang);
 
   const episodicLimit = cfg?.memory?.episodicInContext ?? 8;
   const canonicalNotes = list({ root: r, tier: 'canonical' });
@@ -266,47 +312,49 @@ export function contextPack({ root, role = 'agent', query = '', budget = 6000 } 
 
   const handledIds = new Set();
   const lines = [
-    `# Context Pack: ${role}`,
-    `Generated: ${nowISO()}`,
+    t(`# Paquete de contexto: ${role}`, `# Context Pack: ${role}`),
+    t(`Generado: ${nowISO()}`, `Generated: ${nowISO()}`),
     '',
   ];
 
   // 1) Canonical notes (full notes)
-  lines.push('## Canonical Memory (Decisions & Architecture)');
+  lines.push(t('## Memoria canónica (decisiones y arquitectura)', '## Canonical Memory (Decisions & Architecture)'));
   if (canonicalNotes.length === 0) {
-    lines.push('_No canonical decisions recorded yet._');
+    lines.push(t('_Aún no hay decisiones canónicas registradas._', '_No canonical decisions recorded yet._'));
   } else {
     for (const note of canonicalNotes) {
       handledIds.add(note.id);
       lines.push(`### [[${note.id}]] ${note.title} (${note.kind})`);
-      if (note.tags?.length) lines.push(`Tags: ${note.tags.join(', ')}`);
+      if (note.tags?.length) lines.push(t(`Etiquetas: ${note.tags.join(', ')}`, `Tags: ${note.tags.join(', ')}`));
       lines.push('');
-      lines.push(note.body ? note.body.trim() : '_No content._');
+      lines.push(note.body ? note.body.trim() : t('_Sin contenido._', '_No content._'));
       lines.push('');
     }
   }
   lines.push('');
 
-  // 2) Recent episodic notes (summary)
-  lines.push(`## Recent Episodes (Last ${episodicLimit})`);
+  // 2) Recent episodic notes (summary with first body line preview <= 160 chars)
+  lines.push(t(`## Episodios recientes (últimos ${episodicLimit})`, `## Recent Episodes (Last ${episodicLimit})`));
   if (episodicNotes.length === 0) {
-    lines.push('_No recent episodes._');
+    lines.push(t('_Sin episodios recientes._', '_No recent episodes._'));
   } else {
     for (const note of episodicNotes) {
       handledIds.add(note.id);
-      const firstLine = note.body ? note.body.trim().split('\n')[0].slice(0, 120) : '';
-      const summary = firstLine ? ` — ${firstLine}` : '';
-      lines.push(`- **${note.created ? note.created.slice(0, 10) : today()}** \`[[${note.id}]]\` ${note.title} (@${note.by || 'unknown'})${summary}`);
+      const cleanBody = (note.body || '').replace(/^Links:\s*\[\[.*$/m, '').trim();
+      const firstLine = cleanBody ? cleanBody.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || '' : '';
+      const summary = firstLine ? ` — ${firstLine.slice(0, 160)}` : '';
+      const dateStr = note.created ? note.created.slice(0, 10) : today();
+      lines.push(`- **${dateStr}** \`[[${note.id}]]\` ${note.title} (@${note.by || 'user'})${summary}`);
     }
   }
   lines.push('');
 
-  // 3) Recall query matches
+  // 3) Recall query matches (including specs by default)
   if (query && String(query).trim()) {
-    const hits = recall({ root: r, query, limit: 6 });
+    const hits = recall({ root: r, query, limit: 6, includeSpecs });
     const relevantHits = hits.filter((h) => !handledIds.has(h.note.id));
     if (relevantHits.length > 0) {
-      lines.push(`## Relevant Context for Query: "${query}"`);
+      lines.push(t(`## Contexto relevante para la consulta: "${query}"`, `## Relevant Context for Query: "${query}"`));
       for (const hit of relevantHits) {
         lines.push(`- **[[${hit.note.id}]]** ${hit.note.title} (${hit.note.tier}, score: ${hit.score})`);
         if (hit.snippet) lines.push(`  > ${hit.snippet}`);
@@ -319,7 +367,10 @@ export function contextPack({ root, role = 'agent', query = '', budget = 6000 } 
 
   // Enforce budget
   if (budget && pack.length > budget) {
-    const notice = `\n\n... [truncated to fit ${budget} character budget]`;
+    const notice = t(
+      `\n\n... [truncado para respetar presupuesto de ${budget} caracteres]`,
+      `\n\n... [truncated to fit ${budget} character budget]`
+    );
     pack = pack.slice(0, Math.max(0, budget - notice.length)) + notice;
   }
 
@@ -331,3 +382,11 @@ export function contextPack({ root, role = 'agent', query = '', budget = 6000 } 
 
   return pack;
 }
+
+export {
+  captureClaude,
+  captureCodex,
+  hookConfig,
+  redactSecrets,
+  parseClaudeTranscript,
+} from './capture.js';

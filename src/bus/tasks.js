@@ -19,13 +19,37 @@ export function nextId(root) {
   return `T-${String(max + 1).padStart(4, '0')}`;
 }
 
+function reserveTaskFile(root) {
+  const dir = dirs(root).tasks;
+  ensureDir(dir);
+  let number = Number(nextId(root).slice(2));
+  for (;;) {
+    const id = `T-${String(number).padStart(4, '0')}`;
+    const file = taskPath(root, id);
+    try {
+      return { id, file, fd: fs.openSync(file, 'wx') };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      number++;
+    }
+  }
+}
+
+export function reserveTaskId(root) {
+  const reserved = reserveTaskFile(root);
+  fs.closeSync(reserved.fd);
+  return reserved.id;
+}
+
 export function createTask({ root, title, role, body, spec = null, by = 'lead' }) {
   if (!root || !role || !body) throw new MoragentError(
     'BAD_TASK',
     t('La tarea requiere rol y descripción.', 'A task requires a role and description.'),
     'mora task add <role> "…"',
   );
-  const id = nextId(root);
+  const reserved = reserveTaskFile(root);
+  fs.closeSync(reserved.fd);
+  const id = reserved.id;
   const at = nowISO();
   const task = {
     id,
@@ -40,7 +64,12 @@ export function createTask({ root, title, role, body, spec = null, by = 'lead' }
     files: [],
     by,
   };
-  writeJSON(taskPath(root, id), task);
+  try {
+    writeJSON(reserved.file, task);
+  } catch (error) {
+    try { fs.unlinkSync(reserved.file); } catch { /* preserve original error */ }
+    throw error;
+  }
   return task;
 }
 

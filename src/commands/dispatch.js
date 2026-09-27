@@ -11,6 +11,19 @@ import { getAdapter } from '../crew/adapters.js';
 import { loadPanes, savePanes } from '../crew/panes.js';
 import { getMux } from '../mux/index.js';
 
+const TRUST_PROMPT = /(?:do you trust|\btrust\b|conf[ií]as)/i;
+
+export function assertPaneReady(mux, pane, role) {
+  if (mux.name !== 'orca') return;
+  const screen = mux.read(pane.handle, { lines: 80 });
+  if (!TRUST_PROMPT.test(screen)) return;
+  throw new MoragentError(
+    'PANE_NOT_READY',
+    t(`El panel ${role} espera confirmación de confianza.`, `The ${role} pane is waiting for trust confirmation.`),
+    t(`Acepta el diálogo en el panel ${role} y reintenta.`, `Accept the dialog in the ${role} pane and retry.`),
+  );
+}
+
 export default {
   name: 'dispatch',
   aliases: ['d'],
@@ -28,9 +41,15 @@ export default {
     const adapter = getAdapter(member.cli);
     const panes = loadPanes(root);
     let pane = panes[role];
-    const registeredPane = pane;
+    let registeredPane = pane;
     let mux = pane && !argv.flags.headless ? getMux(pane.mux) : null;
-    if (mux && !mux.alive(pane.handle)) { mux = null; pane = null; }
+    if (mux && !mux.alive(pane.handle)) {
+      delete panes[role];
+      savePanes(root, panes);
+      mux = null;
+      pane = null;
+      registeredPane = null;
+    }
     if (!mux) {
       if (!adapter.installed()) throw new MoragentError(
         'CLI_NOT_INSTALLED',
@@ -45,6 +64,7 @@ export default {
       else info(t(`Simulación: ${preview.id} se enviaría a ${role} vía ${mux.name}.`, `Dry run: ${preview.id} would be sent to ${role} via ${mux.name}.`));
       return 0;
     }
+    if (pane) assertPaneReady(mux, pane, role);
     let task = createTask({
       root,
       title: typeof argv.flags.title === 'string' ? argv.flags.title : undefined,
@@ -60,10 +80,11 @@ export default {
     let launch = null;
     try {
       if (mux.name === 'headless') {
-        const result = mux.spawn({ root, role, cwd: root, adapter, member, taskId: task.id });
-        launch = mux.send(result.handle, prompt, { root, role, adapter, member, taskId: task.id });
+        const autonomy = pane?.mux === 'headless' ? pane.autonomy : member.autonomy;
+        const result = mux.spawn({ root, role, cwd: root, adapter, member, taskId: task.id, autonomy });
+        launch = mux.send(result.handle, prompt, { root, role, adapter, member, taskId: task.id, autonomy });
         if (!argv.flags.headless || !registeredPane) {
-          panes[role] = { mux: 'headless', handle: result.handle, cli: member.cli, startedAt: nowISO() };
+          panes[role] = { mux: 'headless', handle: result.handle, cli: member.cli, autonomy: autonomy || 'auto', startedAt: nowISO() };
           savePanes(root, panes);
         }
       } else {
