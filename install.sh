@@ -23,9 +23,10 @@ major=$(node -p "process.versions.node.split('.')[0]")
 [ "$major" -ge 18 ] || { need_node; exit 1; }
 command -v npm >/dev/null 2>&1 || fail "npm no está disponible / npm is not available"
 
+# npm registry when the package is published there, otherwise straight from GitHub.
 pkg="moragent"
-if [ "${MORAGENT_FROM_GIT:-0}" = "1" ]; then
-  pkg="git+https://github.com/EduardoMoraga/moragent.git"
+if [ "${MORAGENT_FROM_GIT:-0}" = "1" ] || ! npm view moragent version >/dev/null 2>&1; then
+  pkg="github:EduardoMoraga/moragent"
 fi
 
 info "Instalando MORAGENT / Installing MORAGENT"

@@ -14,8 +14,10 @@ $major = [int](& node -p "process.versions.node.split('.')[0]")
 if ($major -lt 18) { Fail "Node.js >= 18 requerido. Instala LTS desde https://nodejs.org" }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Fail "npm no está disponible / npm is not available" }
 
+# npm registry when the package is published there, otherwise straight from GitHub.
 $pkg = "moragent"
-if ($env:MORAGENT_FROM_GIT -eq "1") { $pkg = "git+https://github.com/EduardoMoraga/moragent.git" }
+npm view moragent version *> $null
+if ($env:MORAGENT_FROM_GIT -eq "1" -or $LASTEXITCODE -ne 0) { $pkg = "github:EduardoMoraga/moragent" }
 
 Info "Instalando MORAGENT / Installing MORAGENT"
 # npm is a native command: failures set $LASTEXITCODE instead of throwing.

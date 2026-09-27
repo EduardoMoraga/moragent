@@ -7,7 +7,7 @@
 
 **One crew of AI coding agents — Claude Code, Codex, Antigravity, Pi — working together in real terminal panes, with shared tasks, layered memory and an Obsidian second brain.**
 
-[![npm](https://img.shields.io/npm/v/moragent?color=8b5cf6)](https://www.npmjs.com/package/moragent)
+[![version](https://img.shields.io/github/package-json/v/EduardoMoraga/moragent?color=8b5cf6&label=version)](https://github.com/EduardoMoraga/moragent)
 [![license](https://img.shields.io/badge/license-MIT-8b5cf6)](LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A518-8b5cf6)](https://nodejs.org)
 [![stars](https://img.shields.io/github/stars/EduardoMoraga/moragent?style=flat&color=8b5cf6)](https://github.com/EduardoMoraga/moragent/stargazers)
@@ -19,10 +19,6 @@
 ## Install
 
 ```sh
-npm i -g moragent          # or: npx moragent
-```
-
-```sh
 curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install.sh | sh
 ```
 
@@ -30,6 +26,8 @@ curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install
 # Windows (PowerShell)
 irm https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install.ps1 | iex
 ```
+
+<sub>Prefer npm? `npm i -g github:EduardoMoraga/moragent` · try without installing: `npx github:EduardoMoraga/moragent`</sub>
 
 Then, inside any repo:
 
@@ -205,7 +203,7 @@ The same repo is a plugin for both, shipping the MORAGENT skills (lead protocol,
 
 For Codex, the repo ships `.codex-plugin/plugin.json`, which points at the same skills in `plugin/skills/`.
 
-The skills call the `mora` CLI (falling back to `npx moragent` when it is not installed).
+The skills call the `mora` CLI (falling back to `npx github:EduardoMoraga/moragent` when it is not installed).
 
 ## Troubleshooting
 

@@ -7,7 +7,7 @@
 
 **Un equipo de agentes de programación con IA — Claude Code, Codex, Antigravity, Pi — trabajando juntos en paneles reales de terminal, con tareas compartidas, memoria en capas y un segundo cerebro en Obsidian.**
 
-[![npm](https://img.shields.io/npm/v/moragent?color=8b5cf6)](https://www.npmjs.com/package/moragent)
+[![version](https://img.shields.io/github/package-json/v/EduardoMoraga/moragent?color=8b5cf6&label=version)](https://github.com/EduardoMoraga/moragent)
 [![license](https://img.shields.io/badge/license-MIT-8b5cf6)](LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A518-8b5cf6)](https://nodejs.org)
 [![stars](https://img.shields.io/github/stars/EduardoMoraga/moragent?style=flat&color=8b5cf6)](https://github.com/EduardoMoraga/moragent/stargazers)
@@ -19,10 +19,6 @@
 ## Instalación
 
 ```sh
-npm i -g moragent          # o bien: npx moragent
-```
-
-```sh
 curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install.sh | sh
 ```
 
@@ -30,6 +26,8 @@ curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install
 # Windows (PowerShell)
 irm https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install.ps1 | iex
 ```
+
+<sub>¿Prefieres npm? `npm i -g github:EduardoMoraga/moragent` · probar sin instalar: `npx github:EduardoMoraga/moragent`</sub>
 
 Después, dentro de cualquier repo:
 
@@ -205,7 +203,7 @@ El mismo repo es plugin para ambos y trae las skills de MORAGENT (protocolo del 
 
 Para Codex, el repo trae `.codex-plugin/plugin.json`, que apunta a las mismas skills en `plugin/skills/`.
 
-Las skills usan el CLI `mora` (o `npx moragent` si no está instalado).
+Las skills usan el CLI `mora` (o `npx github:EduardoMoraga/moragent` si no está instalado).
 
 ## Solución de problemas
 

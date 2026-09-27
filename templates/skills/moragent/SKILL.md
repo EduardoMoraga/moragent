@@ -22,7 +22,7 @@ No delegues si el cambio es trivial, inseguro, ambiguo, requiere credenciales pr
 
 Buenas tareas: objetivo claro, archivos permitidos, criterios `Done when`, comando de prueba y protocolo de salida.
 
-Si `mora` no existe, usa `npx moragent`.
+Si `mora` no existe, usa `npx github:EduardoMoraga/moragent`.
 
 ## EN
 Use this skill when you lead a project with `mora`.
@@ -41,4 +41,4 @@ Do not delegate trivial, unsafe, ambiguous work, private credentials, or another
 
 Good tasks include scope, allowed files, `Done when`, test command and exit protocol.
 
-If `mora` is missing, use `npx moragent`.
+If `mora` is missing, use `npx github:EduardoMoraga/moragent`.

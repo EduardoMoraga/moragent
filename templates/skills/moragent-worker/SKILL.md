@@ -17,7 +17,7 @@ Cuando recibas una tarea MORAGENT:
 
 Mantén cambios pequeños, documenta decisiones y no toques secretos.
 
-Si `mora` no existe, usa `npx moragent`.
+Si `mora` no existe, usa `npx github:EduardoMoraga/moragent`.
 
 ## EN
 When you receive a MORAGENT task:
@@ -31,4 +31,4 @@ When you receive a MORAGENT task:
 
 Keep changes small, document decisions and never touch secrets.
 
-If `mora` is missing, use `npx moragent`.
+If `mora` is missing, use `npx github:EduardoMoraga/moragent`.
