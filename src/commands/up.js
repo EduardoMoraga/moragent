@@ -7,6 +7,7 @@ import { json, out, info, warn } from '../core/log.js';
 import { getAdapter } from '../crew/adapters.js';
 import { loadPanes, savePanes } from '../crew/panes.js';
 import { printTrustResults, trustRoles } from '../crew/trust.js';
+import { parseDuration } from '../bus/wait.js';
 import { ensureShim } from '../core/shim.js';
 import { detectMux, getMux } from '../mux/index.js';
 
@@ -25,7 +26,7 @@ export default {
   name: 'up',
   group: 'crew',
   summary: { es: 'Abre paneles para el equipo', en: 'Open panes for the crew' },
-  usage: 'mora up [roles…] [--mux orca|herdr|tmux|headless] [--with-lead] [--yolo] [--trust] [--dry-run] [--json]',
+  usage: 'mora up [roles…] [--mux orca|herdr|tmux|headless] [--with-lead] [--yolo] [--trust] [--timeout 25s] [--dry-run] [--json]',
   async run(argv, ctx) {
     const root = ctx.root || requireRoot();
     const cfg = ctx.config || loadConfig(root);
@@ -86,9 +87,9 @@ export default {
     if (!argv.flags['dry-run']) savePanes(root, panes);
     const trustable = opened.filter((item) => item.handle && ['opened', 'existing'].includes(item.status)).map((item) => item.role);
     const trust = acceptTrust && trustable.length && !argv.flags['dry-run'] && muxName !== 'headless'
-      ? trustRoles({ root, roles: trustable, strict: false, waitMs: 3000 })
+      ? trustRoles({ root, roles: trustable, strict: false, timeoutMs: parseDuration(argv.flags.timeout, 25000) })
       : [];
-    const trustComplete = trust.every((item) => item.action !== 'unknown');
+    const trustComplete = trust.every((item) => !['unknown', 'exited'].includes(item.action));
     if (ctx.json) { json({ ok: trustComplete, mux: muxName, panes: opened, trust, leadCurrent, dryRun: !!argv.flags['dry-run'] }); return trustComplete ? 0 : 3; }
     if (argv.flags['dry-run']) info(t('Simulación — no se abrió ningún panel.', 'Dry run — no pane was opened.'));
     out(t('ROL       CLI          PANEL', 'ROLE      CLI          PANE'));

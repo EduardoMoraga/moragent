@@ -58,7 +58,9 @@ export default {
     const idea = argv._.join(' ').trim();
     if (!idea) throw new MoragentError('USAGE', this.usage);
     const estimate = sizeIdea(idea);
-    const slug = slugify(typeof argv.flags.title === 'string' ? argv.flags.title : idea);
+    // A slug is a folder name people type: keep the first meaningful words of the idea, not all of it.
+    const slug = typeof argv.flags.slug === 'string' ? slugify(argv.flags.slug)
+      : slugify((typeof argv.flags.title === 'string' ? argv.flags.title : idea).split(/[,.:;(]/)[0].split(/\s+/).slice(0, 4).join(' '));
     let spec = null;
     try {
       const specs = await import('../spec/index.js');

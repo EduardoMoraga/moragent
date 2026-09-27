@@ -115,3 +115,14 @@ test('hooks merge into existing Claude settings and Codex config without overrid
   const fresh = tmp();
   assert.ok(installHooks(fresh, ['codex']).length === 0, 'no global write without global: true');
 });
+
+test('windows quoting keeps spaced paths and metacharacters as one literal argument', async () => {
+  const { shq, winQuote, which } = await import('../src/core/exec.js');
+  assert.equal(shq('C:\\Program Files\\nodejs\\node.exe', 'win32'), '"C:\\Program Files\\nodejs\\node.exe"');
+  assert.equal(shq('Bash(npm test:*)', 'win32'), '"Bash(npm test:*)"');
+  assert.equal(winQuote('obsidian://open?vault=V&file=F'), '"obsidian://open?vault=V&file=F"');
+  assert.equal(winQuote('say "hi"'), '"say ""hi"""');
+  assert.equal(shq("it's"), "'it'\\''s'", 'POSIX quoting unchanged');
+  assert.equal(which(process.execPath), process.execPath, 'absolute paths resolve to themselves');
+  assert.equal(which(''), null);
+});

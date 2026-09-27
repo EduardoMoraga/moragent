@@ -10,7 +10,7 @@ import headless, { clearHeadlessCache, headlessStatePath } from '../src/mux/head
 import { readJSON, writeJSON, writeText } from '../src/core/fsx.js';
 import { ensureShim, shimDir } from '../src/core/shim.js';
 import { createTask, getTask, updateTask } from '../src/bus/tasks.js';
-import { detectTrustDialog, trustRoles } from '../src/crew/trust.js';
+import { detectExited, detectReadyPrompt, detectTrustDialog, trustRoles } from '../src/crew/trust.js';
 import dispatchCommand from '../src/commands/dispatch.js';
 import downCommand from '../src/commands/down.js';
 import resendCommand from '../src/commands/resend.js';
@@ -76,7 +76,7 @@ test('trust recognizes every verified startup dialog and chooses safe keys', () 
     { kind: 'trust', cli: 'claude', keys: ['down', 'enter'] },
   );
   assert.deepEqual(
-    detectTrustDialog('Do you trust the contents of this directory?\n› 1. Yes, continue'),
+    detectTrustDialog('Do you trust the contents of this directory?\n› 1. Yes, continue\nPress enter to continue'),
     { kind: 'trust', cli: 'codex', keys: ['enter'] },
   );
   assert.deepEqual(
@@ -84,13 +84,27 @@ test('trust recognizes every verified startup dialog and chooses safe keys', () 
     { kind: 'update', keys: ['down', 'down', 'enter'] },
   );
   assert.deepEqual(
-    detectTrustDialog('Do you trust the contents of this project?\n> Yes, I trust this folder'),
+    detectTrustDialog('Do you trust the contents of this project?\n> Yes, I trust this folder\nenter Confirm'),
     { kind: 'trust', cli: 'agy', keys: ['enter'] },
   );
   assert.deepEqual(
     detectTrustDialog('→ Trust\nTrust parent folder\nTrust (this session only)\nDo not trust\n↑↓ navigate  enter select'),
     { kind: 'trust', cli: 'pi', keys: ['enter'] },
   );
+  assert.equal(detectTrustDialog('Do you trust the contents of this project?\n> Yes, I trust this folder'), null);
+  assert.equal(detectTrustDialog('Do you trust the contents of this directory?\n› 1. Yes, continue'), null);
+});
+
+test('trust recognizes ready TUI prompts and distinguishes a shell prompt', () => {
+  for (const screen of [
+    'Claude Code\n⏵⏵ accept edits on\n❯',
+    'Claude Code\n? for shortcuts\n❯',
+    '› Ask Codex\nAsk Codex to do anything',
+    'Antigravity\n? for shortcuts',
+    'pi model: sonnet (sub)\n42%/ context',
+  ]) assert.equal(detectReadyPrompt(screen), true, screen);
+  assert.equal(detectExited('agy CLI program exited\nproject %'), true);
+  assert.equal(detectExited('pi model (sub)\n42%/ context'), false);
 });
 
 test('trust skips a Codex update, accepts trust and uses raw Orca keys', () => {
@@ -98,8 +112,8 @@ test('trust skips a Codex update, accepts trust and uses raw Orca keys', () => {
   savePanes(root, { backend: { mux: 'orca', handle: 'term-backend', cli: 'codex' } });
   const screens = [
     ['Update available!', '› 1. Update now', '2. Skip', '3. Skip until next version', 'Press enter to continue'],
-    ['Do you trust the contents of this directory?', '› 1. Yes, continue'],
-    ['Ready', '›'],
+    ['Do you trust the contents of this directory?', '› 1. Yes, continue', 'Press enter to continue'],
+    ['Ready', '› Ask Codex', 'Ask Codex to do anything'],
   ];
   let screen = 0;
   const sent = [];
@@ -114,7 +128,7 @@ test('trust skips a Codex update, accepts trust and uses raw Orca keys', () => {
     }
     return { code: 0, stdout: '', stderr: '' };
   });
-  const results = trustRoles({ root, roles: ['backend'], strict: true });
+  const results = trustRoles({ root, roles: ['backend'], strict: true, timeoutMs: 100, stableMs: 0, pollMs: 0 });
   assert.deepEqual(results, [{ role: 'backend', mux: 'orca', action: 'skipped-update+trusted', dialogs: 2 }]);
   assert.deepEqual(sent, ['\x1b[B', '\x1b[B', '\r', '\r']);
 });
@@ -129,13 +143,13 @@ test('trust never sends keys for an unknown dialog and reports its last three li
     if (args[1] === 'read') return { code: 0, stdout: JSON.stringify({ result: { terminal: { tail: ['Choose startup mode', 'details', '❯ Custom mode', 'Enter to select'] } } }), stderr: '' };
     return { code: 0, stdout: '', stderr: '' };
   });
-  const results = trustRoles({ root, roles: ['helper'], strict: true });
+  const results = trustRoles({ root, roles: ['helper'], strict: true, timeoutMs: 0, stableMs: 0, pollMs: 0 });
   assert.equal(results[0].action, 'unknown');
   assert.equal(results[0].detail, 'details\n❯ Custom mode\nEnter to select');
   assert.equal(calls.some((call) => call[1][1] === 'send'), false);
 });
 
-test('trust treats a bottom empty prompt as ready even when an accepted dialog remains above', () => {
+test('trust treats a newer ready prompt as ready when an accepted dialog remains above', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-trust-ready-'));
   savePanes(root, { backend: { mux: 'orca', handle: 'term-ready', cli: 'codex' } });
   const calls = [];
@@ -144,15 +158,70 @@ test('trust treats a bottom empty prompt as ready even when an accepted dialog r
     if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ terminals: [{ handle: 'term-ready' }] }), stderr: '' };
     if (args[1] === 'read') return {
       code: 0,
-      stdout: JSON.stringify({ result: { terminal: { tail: ['Do you trust the contents of this directory?', '› 1. Yes, continue', 'Accepted', 'Ready', '›'] } } }),
+      stdout: JSON.stringify({ result: { terminal: { tail: ['Do you trust the contents of this directory?', '› 1. Yes, continue', 'Press enter to continue', 'Accepted', '› Ask Codex'] } } }),
       stderr: '',
     };
     return { code: 0, stdout: '', stderr: '' };
   });
-  assert.deepEqual(trustRoles({ root, roles: ['backend'], strict: true }), [
+  assert.deepEqual(trustRoles({ root, roles: ['backend'], strict: true, timeoutMs: 10, stableMs: 0, pollMs: 0 }), [
     { role: 'backend', mux: 'orca', action: 'ready', dialogs: 0 },
   ]);
   assert.equal(calls.some((call) => call[1][1] === 'send'), false);
+});
+
+test('trust waits through an agy spinner and for two stable complete dialog reads', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-trust-stable-'));
+  savePanes(root, { helper: { mux: 'orca', handle: 'term-agy', cli: 'agy' } });
+  let reads = 0;
+  let accepted = false;
+  let readsAtSend = 0;
+  setExec((cmd, args) => {
+    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ terminals: [{ handle: 'term-agy' }] }), stderr: '' };
+    if (args[1] === 'read') {
+      reads++;
+      const tail = accepted
+        ? ['Antigravity', '? for shortcuts']
+        : reads === 1
+          ? ['⣷ Signing in...', 'Do you trust the contents of this project?', '> Yes, I trust this folder', 'enter Confirm']
+          : ['Do you trust the contents of this project?', '> Yes, I trust this folder', 'enter Confirm'];
+      return { code: 0, stdout: JSON.stringify({ result: { terminal: { tail } } }), stderr: '' };
+    }
+    if (args[1] === 'send') {
+      readsAtSend = reads;
+      accepted = true;
+      return { code: 0, stdout: '', stderr: '' };
+    }
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  assert.deepEqual(
+    trustRoles({ root, roles: ['helper'], strict: true, timeoutMs: 100, stableMs: 0, pollMs: 0 }),
+    [{ role: 'helper', mux: 'orca', action: 'trusted', dialogs: 1 }],
+  );
+  assert.ok(readsAtSend >= 3, `sent after only ${readsAtSend} reads`);
+});
+
+test('trust reports exited when accepting a dialog returns to the shell', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-trust-exited-'));
+  savePanes(root, { helper: { mux: 'orca', handle: 'term-agy', cli: 'agy' } });
+  let exited = false;
+  setExec((cmd, args) => {
+    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ terminals: [{ handle: 'term-agy' }] }), stderr: '' };
+    if (args[1] === 'read') {
+      const tail = exited
+        ? ['CLI program exited', 'project %']
+        : ['Do you trust the contents of this project?', '> Yes, I trust this folder', 'enter Confirm'];
+      return { code: 0, stdout: JSON.stringify({ result: { terminal: { tail } } }), stderr: '' };
+    }
+    if (args[1] === 'send') {
+      exited = true;
+      return { code: 0, stdout: '', stderr: '' };
+    }
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  const [result] = trustRoles({ root, roles: ['helper'], strict: true, timeoutMs: 100, stableMs: 0, pollMs: 0 });
+  assert.equal(result.action, 'exited');
+  assert.equal(result.hint, 'mora down helper && mora up helper');
+  assert.match(result.detail, /project %/);
 });
 
 test('mux trust keys use named tmux keys and raw Herdr input', () => {
@@ -192,7 +261,9 @@ test('up --trust accepts a recognized dialog after opening the pane', async () =
     if (args[0] === 'list-panes') return { code: 0, stdout: '%7\n', stderr: '' };
     if (args[0] === 'capture-pane') return {
       code: 0,
-      stdout: accepted ? 'Ready\n›\n' : 'Do you trust the contents of this directory?\n› 1. Yes, continue\n',
+      stdout: accepted
+        ? 'Ready\n› Ask Codex\nAsk Codex to do anything\n'
+        : 'Do you trust the contents of this directory?\n› 1. Yes, continue\nPress enter to continue\n',
       stderr: '',
     };
     if (args[0] === 'send-keys' && args.at(-1) === 'Enter') accepted = true;

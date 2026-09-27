@@ -132,7 +132,7 @@ export async function link({ root, vault, folder = 'Moragent', mode = 'link' } =
     destExists = true;
     isSymlink = stat.isSymbolicLink();
     if (isSymlink) {
-      const linkTarget = fs.readlinkSync(destDir);
+      const linkTarget = fs.readlinkSync(destDir).replace(/^\\\\\?\\|^\\\?\?\\/, '');
       const absLink = path.resolve(path.dirname(destDir), linkTarget);
       pointsToUs = absLink === path.resolve(moraDir);
     }
