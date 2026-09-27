@@ -383,7 +383,7 @@ async function handleGrep(args, root) {
         try {
           const content = fs.readFileSync(full, 'utf8');
           const lines = content.split('\n');
-          const relPath = path.relative(root, full);
+          const relPath = path.relative(root, full).split(path.sep).join('/'); // models see forward slashes on every OS
           for (let i = 0; i < lines.length; i++) {
             if (regex.test(lines[i])) {
               matches.push(`${relPath}:${i + 1}: ${lines[i]}`);
@@ -404,7 +404,7 @@ async function handleGrep(args, root) {
     try {
       const content = fs.readFileSync(resolved, 'utf8');
       const lines = content.split('\n');
-      const relPath = path.relative(root, resolved);
+      const relPath = path.relative(root, resolved).split(path.sep).join('/');
       for (let i = 0; i < lines.length; i++) {
         if (regex.test(lines[i])) {
           matches.push(`${relPath}:${i + 1}: ${lines[i]}`);

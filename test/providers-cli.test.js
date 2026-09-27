@@ -163,9 +163,10 @@ test('status is bilingual and uses verified login commands with a three-second t
   const calls = [];
   try {
     for (const id of ['claude', 'codex', 'agy', 'pi', 'gemini', 'opencode']) {
-      const bin = path.join(root, id);
-      fs.writeFileSync(bin, '#!/bin/sh\n');
-      fs.chmodSync(bin, 0o755);
+      // which() needs a PATHEXT extension on Windows.
+      const bin = path.join(root, process.platform === 'win32' ? `${id}.cmd` : id);
+      fs.writeFileSync(bin, process.platform === 'win32' ? '@echo off\r\n' : '#!/bin/sh\n');
+      if (process.platform !== 'win32') fs.chmodSync(bin, 0o755);
     }
     process.env.PATH = root;
     setExec((command, args, options) => {

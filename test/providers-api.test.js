@@ -225,7 +225,7 @@ test('tools: bash autonomy "ask" refuses, "auto" executes', async () => {
     assert.ok(askRes.summary.includes('Refused'));
 
     // autonomy 'auto' -> runs
-    const autoRes = await executeTool('bash', { command: 'echo "hello from bash"' }, { root, autonomy: 'auto' });
+    const autoRes = await executeTool('bash', { command: 'echo hello from bash' }, { root, autonomy: 'auto' });
     assert.equal(autoRes.ok, true);
     assert.equal(autoRes.output.trim(), 'hello from bash');
   } finally {
