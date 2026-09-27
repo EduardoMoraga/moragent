@@ -10,9 +10,12 @@ TARBALL_PATH="$ROOT/$TARBALL"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"; rm -f "$TARBALL_PATH"' EXIT
 
+# List once: `tar | grep -q` under pipefail fails when grep exits early and tar gets SIGPIPE.
+LISTING="$(tar -tf "$TARBALL_PATH")"
+
 assert_has() {
   local pattern="$1"
-  if ! tar -tf "$TARBALL_PATH" | grep -Eq "$pattern"; then
+  if ! grep -Eq "$pattern" <<<"$LISTING"; then
     echo "Missing from tarball: $pattern" >&2
     exit 1
   fi
@@ -20,9 +23,9 @@ assert_has() {
 
 assert_not_has() {
   local pattern="$1"
-  if tar -tf "$TARBALL_PATH" | grep -Eq "$pattern"; then
+  if grep -Eq "$pattern" <<<"$LISTING"; then
     echo "Unexpected tarball entry: $pattern" >&2
-    tar -tf "$TARBALL_PATH" | grep -E "$pattern" >&2
+    grep -E "$pattern" <<<"$LISTING" >&2
     exit 1
   fi
 }

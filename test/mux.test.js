@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { setExec, resetExec } from '../src/core/exec.js';
+import { setExec, resetExec, shq } from '../src/core/exec.js';
 import { detectMux, getMux } from '../src/mux/index.js';
 import { paneCommand } from '../src/mux/util.js';
 import headless, { clearHeadlessCache, headlessStatePath } from '../src/mux/headless.js';
@@ -18,6 +18,7 @@ import upCommand from '../src/commands/up.js';
 import { loadPanes, savePanes } from '../src/crew/panes.js';
 
 // These tests assert the POSIX command strings; Windows variants pass platform: 'win32' explicitly.
+const IS_WIN = process.platform === 'win32'; // real host, for fake binaries that which() must find
 Object.defineProperty(process, 'platform', { value: 'linux' });
 
 afterEach(() => resetExec());
@@ -248,9 +249,9 @@ test('up --trust accepts a recognized dialog after opening the pane', async () =
   const bin = path.join(root, 'bin');
   fs.mkdirSync(bin, { recursive: true });
   for (const name of ['codex', 'tmux']) {
-    const file = path.join(bin, process.platform === 'win32' ? `${name}.cmd` : name);
+    const file = path.join(bin, IS_WIN ? `${name}.cmd` : name);
     fs.writeFileSync(file, '');
-    if (process.platform !== 'win32') fs.chmodSync(file, 0o755);
+    if (!IS_WIN) fs.chmodSync(file, 0o755);
   }
   const previousPath = process.env.PATH;
   const previousTmux = process.env.TMUX;
@@ -371,7 +372,7 @@ test('pane command prepends an existing project shim to PATH', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-pane-shim-'));
   ensureShim(root);
   const command = paneCommand({ root, role: 'backend', command: 'codex' });
-  assert.match(command, new RegExp(`PATH=${shimDir(root).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:"\\$PATH"`));
+  assert.ok(command.includes(`PATH=${shq(shimDir(root))}:"$PATH"`), command);
   assert.match(command, /MORAGENT_ROLE=backend/);
 });
 
@@ -401,9 +402,9 @@ test('dispatch removes a dead registered pane before headless fallback', async (
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-dead-pane-'));
   const bin = path.join(root, 'bin');
   fs.mkdirSync(bin, { recursive: true });
-  const codex = path.join(bin, process.platform === 'win32' ? 'codex.cmd' : 'codex');
+  const codex = path.join(bin, IS_WIN ? 'codex.cmd' : 'codex');
   fs.writeFileSync(codex, '');
-  if (process.platform !== 'win32') fs.chmodSync(codex, 0o755);
+  if (!IS_WIN) fs.chmodSync(codex, 0o755);
   savePanes(root, { backend: { mux: 'tmux', handle: '%dead', cli: 'codex' } });
   setExec(() => ({ code: 0, stdout: '%other\n', stderr: '' }));
   const oldPath = process.env.PATH;
