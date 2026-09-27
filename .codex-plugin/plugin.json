@@ -1,0 +1,36 @@
+{
+  "name": "moragent",
+  "version": "4.0.0",
+  "description": "MORAGENT v4 skills for leading and working in multi-agent CLI projects with mora.",
+  "author": {
+    "name": "Eduardo Moraga",
+    "email": "eduardo.moraga.o@gmail.com",
+    "url": "https://github.com/EduardoMoraga"
+  },
+  "homepage": "https://github.com/EduardoMoraga/moragent",
+  "repository": "https://github.com/EduardoMoraga/moragent",
+  "license": "MIT",
+  "keywords": [
+    "agents",
+    "skills",
+    "orchestration",
+    "spec-driven-development"
+  ],
+  "skills": "./plugin/skills/",
+  "interface": {
+    "displayName": "MORAGENT",
+    "shortDescription": "Lead multi-agent CLI crews with specs, memory and a task bus.",
+    "longDescription": "Use the mora CLI to plan, specify, dispatch, verify and remember work across Claude Code, Codex, Pi and other coding agents.",
+    "developerName": "Eduardo Moraga",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Run the MORAGENT lead protocol.",
+      "Continue the current MORAGENT spec.",
+      "Work on my MORAGENT task envelope."
+    ]
+  }
+}

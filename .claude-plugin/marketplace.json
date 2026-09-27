@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "moragent",
+  "description": "MORAGENT \u2014 executive orchestrator for agentic development",
+  "owner": {
+    "name": "Eduardo Moraga",
+    "url": "https://github.com/EduardoMoraga"
+  },
+  "plugins": [
+    {
+      "name": "moragent",
+      "description": "Lead a cross-vendor agent crew with specs, task bus, layered memory and an Obsidian second brain.",
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/EduardoMoraga/moragent"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "moragent",
+  "version": "4.0.0",
+  "description": "MORAGENT v4 \u2014 lead a cross-vendor crew (Claude Code, Codex, Antigravity, Pi) with specs, a task bus, layered memory and an Obsidian second brain. Skills drive the `mora` CLI.",
+  "author": {
+    "name": "Eduardo Moraga",
+    "url": "https://github.com/EduardoMoraga"
+  },
+  "homepage": "https://github.com/EduardoMoraga/moragent",
+  "repository": "https://github.com/EduardoMoraga/moragent",
+  "license": "MIT",
+  "keywords": [
+    "agents",
+    "orchestration",
+    "multi-agent",
+    "spec-driven-development",
+    "memory",
+    "obsidian"
+  ],
+  "skills": "./plugin/skills/"
+}

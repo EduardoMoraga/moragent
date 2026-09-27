@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Build plugin and verify generated skills
+        shell: bash
+        run: |
+          npm run build
+          git diff --exit-code plugin/
+      - run: npm test
+      - name: Smoke init and doctor JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          node "$GITHUB_WORKSPACE/bin/mora.js" init --yes --dir "$tmp" --json
+          cd "$tmp"
+          set +e
+          node "$GITHUB_WORKSPACE/bin/mora.js" doctor --json > doctor.json
+          code=$?
+          set -e
+          node -e "JSON.parse(require('fs').readFileSync('doctor.json','utf8'))"
+          echo "doctor exit code: $code"

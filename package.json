@@ -7,10 +7,11 @@
     "moragent": "bin/mora.js",
     "mora": "bin/mora.js"
   },
-  "files": ["bin", "src", "templates", "plugin", "docs/ARCHITECTURE.md", "README.md", "README.es.md", "LICENSE"],
+  "files": ["bin", "src", "templates", "plugin", "install.sh", "install.ps1", "docs/ARCHITECTURE.md", "README.md", "README.es.md", "LICENSE"],
   "engines": { "node": ">=18" },
   "scripts": {
-    "test": "node --test test/",
+    "build": "node scripts/build-plugin.js",
+    "test": "node scripts/test.js",
     "start": "node bin/mora.js"
   },
   "keywords": ["ai-agents", "multi-agent", "orchestrator", "claude-code", "codex", "antigravity", "pi", "agentic", "spec-driven-development", "obsidian", "second-brain", "tmux", "herdr", "orca", "cli"],

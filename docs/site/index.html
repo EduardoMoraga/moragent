@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MORAGENT — one crew of AI coding agents</title>
+<meta name="description" content="Run Claude Code, Codex, Antigravity and Pi as one crew in real terminal panes, with a task bus, layered memory, spec-driven phases and an Obsidian second brain. npm i -g moragent.">
+<meta property="og:title" content="MORAGENT">
+<meta property="og:description" content="One crew of AI coding agents, in real panes, with memory.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fbfaf8; --bg2: #f3f1ee; --fg: #17151c; --muted: #605a6b; --line: #e3dfe8;
+  --accent: #7c4dea; --accent-soft: #efe9fd; --term: #16141b; --term-fg: #e8e4ef; --term-dim: #8b8398;
+  --ok: #3fb96f; --warn: #e3a93b; --cyan: #5cc8d8; --blue: #7aa2f7;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f0e13; --bg2: #16141c; --fg: #ece9f2; --muted: #9d96aa; --line: #26232f;
+    --accent: #a584ff; --accent-soft: #211a36; --term: #0a090d; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f0e13; --bg2: #16141c; --fg: #ece9f2; --muted: #9d96aa; --line: #26232f;
+  --accent: #a584ff; --accent-soft: #211a36; --term: #0a090d; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 var(--sans); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre, kbd { font-family: var(--mono); font-size: .88em; }
+:not(pre) > code { background: var(--bg2); border: 1px solid var(--line); padding: .08em .35em; border-radius: 4px; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+
+/* nav */
+nav { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+nav .wrap { display: flex; align-items: center; gap: 20px; height: 56px; }
+.brand { font: 700 15px var(--mono); letter-spacing: .08em; color: var(--fg); display: flex; align-items: center; gap: 8px; }
+.brand i { color: var(--accent); font-style: normal; }
+nav .links { margin-left: auto; display: flex; gap: 18px; align-items: center; font-size: 14px; }
+nav .links a { color: var(--muted); }
+nav .links a:hover { color: var(--fg); text-decoration: none; }
+.theme { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; height: 30px; width: 30px; cursor: pointer; font: 14px var(--mono); }
+@media (max-width: 640px) { nav .links a.opt { display: none; } }
+
+/* hero */
+header.hero { padding: 72px 0 40px; }
+.logo { font: 500 clamp(9px, 2.2vw, 15px)/1.15 var(--mono); color: var(--accent); margin: 0 0 22px; white-space: pre; overflow: hidden; }
+h1 { font-size: clamp(30px, 5.2vw, 54px); line-height: 1.08; letter-spacing: -.025em; margin: 0 0 18px; max-width: 18ch; font-weight: 700; }
+h1 em { font-style: normal; color: var(--accent); }
+.lede { font-size: clamp(17px, 2vw, 19px); color: var(--muted); max-width: 60ch; margin: 0 0 30px; }
+
+/* install */
+.install { max-width: 640px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg2); overflow: hidden; }
+.tabs { display: flex; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { background: none; border: 0; padding: 10px 16px; font: 500 13px var(--mono); color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.cmd { display: none; align-items: center; gap: 12px; padding: 14px 16px; }
+.cmd.on { display: flex; }
+.cmd code { flex: 1; font-size: 14px; overflow-x: auto; white-space: nowrap; background: none; border: 0; padding: 0; }
+.cmd code::before { content: '$ '; color: var(--muted); }
+.cmd.ps code::before { content: 'PS> '; }
+.copy { flex: none; background: var(--bg); border: 1px solid var(--line); color: var(--muted); border-radius: 6px; font: 12px var(--mono); padding: 5px 10px; cursor: pointer; }
+.copy:hover { color: var(--fg); border-color: var(--accent); }
+.then { font: 13px var(--mono); color: var(--muted); margin: 12px 0 0; }
+.then b { color: var(--fg); font-weight: 500; }
+
+/* terminal */
+.stage { padding: 28px 0 64px; }
+.term { background: var(--term); color: var(--term-fg); border-radius: 12px; border: 1px solid #2a2633; box-shadow: 0 30px 80px -30px rgba(40, 20, 90, .45); font: 12.5px/1.55 var(--mono); overflow: hidden; }
+.term .bar { display: flex; align-items: center; gap: 7px; padding: 10px 14px; border-bottom: 1px solid #25222d; color: var(--term-dim); font-size: 11.5px; }
+.term .bar span { width: 10px; height: 10px; border-radius: 50%; background: #3a3544; }
+.term .bar em { font-style: normal; margin-left: 10px; }
+.grid { display: grid; grid-template-columns: 1.15fr 1fr; grid-template-rows: auto auto auto; gap: 1px; background: #25222d; min-height: 380px; }
+.pane { background: var(--term); padding: 12px 14px; position: relative; min-width: 0; overflow: hidden; }
+.pane h4 { margin: 0 0 8px; font: 500 11px var(--mono); color: var(--term-dim); letter-spacing: .04em; display: flex; justify-content: space-between; gap: 8px; }
+.pane h4 b { color: #c7b6ff; font-weight: 500; }
+.pane p { margin: 0; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.lead-pane { grid-row: span 3; }
+.dim { color: var(--term-dim); } .ok { color: var(--ok); } .vi { color: #b79cff; } .cy { color: var(--cyan); } .ye { color: var(--warn); }
+.typed { display: inline-block; overflow: hidden; white-space: nowrap; vertical-align: bottom; width: 0; animation: type 1.1s steps(7) .5s forwards; }
+.caret { display: inline-block; width: 7px; height: 1.1em; background: var(--term-fg); vertical-align: text-bottom; animation: blink 1s step-end infinite; }
+.l { opacity: 0; animation: show .01s forwards; }
+.worker { opacity: 0; transform: translateY(6px); animation: pane .45s ease-out forwards; }
+.w1 { animation-delay: 2.0s; } .w2 { animation-delay: 2.35s; } .w3 { animation-delay: 2.7s; }
+@keyframes type { to { width: 7ch; } }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes show { to { opacity: 1; } }
+@keyframes pane { to { opacity: 1; transform: none; } }
+@media (max-width: 760px) {
+  .grid { grid-template-columns: 1fr; }
+  .lead-pane { grid-row: auto; }
+  .term { font-size: 11.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typed { animation: none; width: 7ch; }
+  .l, .worker { animation: none; opacity: 1; transform: none; }
+  .caret { animation: none; }
+}
+
+/* sections */
+section { padding: 64px 0; border-top: 1px solid var(--line); }
+h2 { font-size: clamp(24px, 3.2vw, 32px); letter-spacing: -.015em; margin: 0 0 10px; line-height: 1.2; }
+.kicker { font: 500 12px var(--mono); color: var(--accent); letter-spacing: .12em; text-transform: uppercase; margin: 0 0 10px; }
+.sub { color: var(--muted); max-width: 62ch; margin: 0 0 32px; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font: 500 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; background: var(--bg2); white-space: nowrap; }
+td.c, th.c { text-align: center; }
+.us { background: var(--accent-soft); }
+.y { color: var(--ok); font-weight: 700; } .n { color: var(--muted); } .p { color: var(--warn); }
+.note { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+
+.tour { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+@media (max-width: 860px) { .tour { grid-template-columns: 1fr; } }
+pre.code { background: var(--term); color: var(--term-fg); padding: 18px 20px; border-radius: 10px; overflow-x: auto; line-height: 1.7; margin: 0; font-size: 13px; }
+pre.code .c { color: var(--term-dim); }
+pre.code .k { color: #c7b6ff; }
+ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+ol.steps li { counter-increment: s; position: relative; padding: 0 0 18px 44px; }
+ol.steps li::before { content: counter(s, decimal-leading-zero); position: absolute; left: 0; top: 1px; font: 500 13px var(--mono); color: var(--accent); }
+ol.steps li b { display: block; margin-bottom: 2px; }
+ol.steps li span { color: var(--muted); font-size: 15px; }
+
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font: 13px var(--mono); margin: 0 0 36px; }
+.flow .node { border: 1px solid var(--line); background: var(--bg2); border-radius: 8px; padding: 9px 12px; }
+.flow .node.hl { border-color: var(--accent); background: var(--accent-soft); }
+.flow .arr { color: var(--accent); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 20px; background: var(--bg); }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+.card code { font-size: 12.5px; }
+.card .tag { font: 500 11px var(--mono); color: var(--accent); letter-spacing: .08em; text-transform: uppercase; display: block; margin-bottom: 10px; }
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+
+details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+details:first-of-type { border-top: 1px solid var(--line); }
+summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: '+'; font-family: var(--mono); color: var(--accent); }
+details[open] summary::after { content: '−'; }
+details p { color: var(--muted); margin: 10px 0 0; max-width: 70ch; }
+
+footer { border-top: 1px solid var(--line); padding: 48px 0 64px; text-align: center; }
+.star { display: inline-flex; gap: 10px; align-items: center; background: var(--accent); color: #fff; border-radius: 8px; padding: 12px 20px; font-weight: 600; }
+.star:hover { text-decoration: none; filter: brightness(1.08); }
+footer p { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#"><i>◆</i> MORAGENT</a>
+    <div class="links">
+      <a class="opt" href="#why">Why</a>
+      <a class="opt" href="#tour">Tour</a>
+      <a class="opt" href="#concepts">Concepts</a>
+      <a class="opt" href="#faq">FAQ</a>
+      <a href="https://github.com/EduardoMoraga/moragent">GitHub</a>
+      <button class="theme" id="theme" type="button" aria-label="Toggle color theme">◐</button>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+<pre class="logo" aria-hidden="true">█▀▄▀█ █▀█ █▀█ ▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀
+█ ▀ █ █▄█ █▀▄ █▀█ █▄█ ██▄ █ ▀█  █</pre>
+    <h1>One crew of AI coding agents, <em>in real panes</em>, with memory.</h1>
+    <p class="lede">MORAGENT turns any repo into an agentic project: Claude Code, Codex, Antigravity and Pi work side by side, hand tasks to each other through a bus on disk, and remember what they decided — in markdown your Obsidian vault can read.</p>
+
+    <div class="install" role="tablist">
+      <div class="tabs">
+        <button type="button" role="tab" aria-selected="true" data-tab="npm">npm</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="npx">npx</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="sh">macOS · Linux</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="ps">Windows</button>
+      </div>
+      <div class="cmd on" data-panel="npm"><code>npm i -g moragent</code><button class="copy" type="button">copy</button></div>
+      <div class="cmd" data-panel="npx"><code>npx moragent</code><button class="copy" type="button">copy</button></div>
+      <div class="cmd" data-panel="sh"><code>curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install.sh | sh</code><button class="copy" type="button">copy</button></div>
+      <div class="cmd ps" data-panel="ps"><code>irm https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install.ps1 | iex</code><button class="copy" type="button">copy</button></div>
+    </div>
+    <p class="then">then <b>cd your-repo &amp;&amp; mora</b> — Node ≥ 18, zero npm dependencies, MIT.</p>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="wrap">
+    <div class="term" role="img" aria-label="Animated terminal: mora up opens backend, frontend and helper panes next to the lead">
+      <div class="bar"><span></span><span></span><span></span><em>coffee-shop — orca</em></div>
+      <div class="grid">
+        <div class="pane lead-pane">
+          <h4><b>lead</b><span>claude · you are here</span></h4>
+          <p><span class="vi">~/coffee-shop</span> <span class="dim">$</span> <span class="typed">mora up</span><span class="caret"></span></p>
+          <p class="l" style="animation-delay:1.7s"><span class="cy">›</span> mux: orca · opening 3 panes</p>
+          <p class="l" style="animation-delay:2.1s"><span class="ok">✓</span> backend   codex    <span class="dim">term_8f2a</span></p>
+          <p class="l" style="animation-delay:2.45s"><span class="ok">✓</span> frontend  claude   <span class="dim">term_91c0</span></p>
+          <p class="l" style="animation-delay:2.8s"><span class="ok">✓</span> helper    agy      <span class="dim">term_a47d</span></p>
+          <p class="l" style="animation-delay:3.4s">&nbsp;</p>
+          <p class="l" style="animation-delay:3.4s"><span class="dim">$</span> mora dispatch backend "Orders API"</p>
+          <p class="l" style="animation-delay:3.9s"><span class="ok">✓</span> T-0001 → backend <span class="dim">(sent)</span></p>
+          <p class="l" style="animation-delay:4.3s"><span class="dim">$</span> mora dispatch frontend "Checkout"</p>
+          <p class="l" style="animation-delay:4.8s"><span class="ok">✓</span> T-0002 → frontend <span class="dim">(sent)</span></p>
+          <p class="l" style="animation-delay:5.2s"><span class="dim">$</span> mora wait T-0001 T-0002</p>
+          <p class="l" style="animation-delay:5.6s"><span class="dim">  waiting… 0/2 done</span></p>
+          <p class="l" style="animation-delay:8.4s"><span class="ok">✓</span> T-0001 done  <span class="dim">orders API + tests</span></p>
+          <p class="l" style="animation-delay:9.0s"><span class="ok">✓</span> T-0002 done  <span class="dim">checkout screen</span></p>
+          <p class="l" style="animation-delay:9.4s"><span class="vi">◆</span> 2 episodes saved to memory</p>
+        </div>
+        <div class="pane worker w1">
+          <h4><b>backend</b><span>codex</span></h4>
+          <p class="l" style="animation-delay:4.0s"><span class="dim">›</span> Read and run .moragent/tasks/T-0001.md</p>
+          <p class="l" style="animation-delay:4.6s"><span class="cy">•</span> mora context backend --query orders</p>
+          <p class="l" style="animation-delay:5.4s"><span class="cy">•</span> edit src/orders/api.js</p>
+          <p class="l" style="animation-delay:6.3s"><span class="cy">•</span> npm test <span class="ok">14 passed</span></p>
+          <p class="l" style="animation-delay:8.1s"><span class="dim">$</span> mora done T-0001 --summary "…"</p>
+        </div>
+        <div class="pane worker w2">
+          <h4><b>frontend</b><span>claude</span></h4>
+          <p class="l" style="animation-delay:4.9s"><span class="dim">›</span> Read and run .moragent/tasks/T-0002.md</p>
+          <p class="l" style="animation-delay:5.7s"><span class="cy">•</span> read spec checkout · RF-2, RF-3</p>
+          <p class="l" style="animation-delay:6.8s"><span class="cy">•</span> write src/ui/Checkout.jsx</p>
+          <p class="l" style="animation-delay:8.7s"><span class="dim">$</span> mora done T-0002 --summary "…"</p>
+        </div>
+        <div class="pane worker w3">
+          <h4><b>helper</b><span>agy</span></h4>
+          <p class="l" style="animation-delay:3.2s"><span class="dim">idle · waiting for a task</span></p>
+          <p class="l" style="animation-delay:7.2s"><span class="ye">!</span> memory: <span class="dim">"Stripe webhooks need raw body"</span></p>
+          <p class="l" style="animation-delay:7.6s"><span class="dim">  → episodic/2026-09-27-stripe-raw-body.md</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section id="why">
+  <div class="wrap">
+    <p class="kicker">Why MORAGENT</p>
+    <h2>Several agents is easy. One crew is the hard part.</h2>
+    <p class="sub">Getting agents from different vendors to share work, remember decisions and stay out of each other's files. MORAGENT is a thin executive layer on top of the multiplexer you already use.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th></th><th class="c us">MORAGENT</th><th class="c">herdr</th><th class="c">gentle-ai</th><th class="c">hello-sdd</th><th class="c">tmux by hand</th></tr></thead>
+        <tbody>
+          <tr><td>Agents in real panes</td><td class="c us"><span class="y">✓</span></td><td class="c y">✓</td><td class="c n">—</td><td class="c n">—</td><td class="c y">✓</td></tr>
+          <tr><td>Mix vendors in one crew</td><td class="c us"><span class="y">✓</span></td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">—</td><td class="c p">manual</td></tr>
+          <tr><td>Task bus between agents</td><td class="c us"><span class="y">✓</span></td><td class="c p">~</td><td class="c n">—</td><td class="c n">—</td><td class="c n">—</td></tr>
+          <tr><td>Layered memory</td><td class="c us"><span class="y">✓</span></td><td class="c n">—</td><td class="c y">✓</td><td class="c n">—</td><td class="c n">—</td></tr>
+          <tr><td>Spec-driven phases</td><td class="c us"><span class="y">✓</span></td><td class="c n">—</td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">—</td></tr>
+          <tr><td>Obsidian second brain</td><td class="c us"><span class="y">✓</span></td><td class="c n">—</td><td class="c n">—</td><td class="c n">—</td><td class="c n">—</td></tr>
+          <tr><td>One-line install</td><td class="c us"><span class="y">✓</span></td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Based on each project's public docs as of September 2026 — <a href="https://github.com/EduardoMoraga/moragent/issues">tell us</a> if something is wrong. MORAGENT doesn't replace herdr, Orca or tmux: it drives them.</p>
+  </div>
+</section>
+
+<section id="tour">
+  <div class="wrap">
+    <p class="kicker">60-second tour</p>
+    <h2>Real commands, nothing hidden.</h2>
+    <p class="sub">Every read command takes <code>--json</code> and every command works without a TTY — so the lead agent can drive all of this itself.</p>
+    <div class="tour">
+<pre class="code"><span class="k">mora</span> init --preset trio --goal <span class="c">"Online coffee shop"</span>
+<span class="k">mora</span> doctor
+<span class="k">mora</span> plan <span class="c">"Stripe checkout, admin, receipts"</span>
+<span class="k">mora</span> up
+<span class="k">mora</span> dispatch backend <span class="c">"Orders API"</span> --spec checkout
+<span class="k">mora</span> dispatch frontend <span class="c">"Checkout screen"</span>
+<span class="k">mora</span> wait T-0001 T-0002
+<span class="k">mora</span> board
+<span class="k">mora</span> memory add <span class="c">"Orders use UUIDv7"</span> --tier canonical
+<span class="k">mora</span> brain link</pre>
+      <ol class="steps">
+        <li><b>Set up</b><span>A five-question wizard (or flags) writes <code>.moragent/</code> and one managed block in <code>AGENTS.md</code>, <code>CLAUDE.md</code>, <code>GEMINI.md</code>.</span></li>
+        <li><b>Check</b><span><code>doctor</code> lists Node, each CLI with its version, multiplexers and your vault — with the one-line fix for anything missing.</span></li>
+        <li><b>Plan</b><span><code>plan</code> sizes the idea (S/M/L/XL), recommends a crew and creates the first spec.</span></li>
+        <li><b>Run</b><span><code>up</code> opens one pane per role; <code>dispatch</code> writes a task envelope and types one line into the right pane.</span></li>
+        <li><b>Integrate</b><span><code>wait</code> blocks until tasks finish; results become episodic memory; durable decisions go canonical.</span></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section id="concepts">
+  <div class="wrap">
+    <p class="kicker">How it flows</p>
+    <h2>Markdown on disk is the source of truth.</h2>
+    <p class="sub">No server, no daemon, no database. Any agent from any vendor can read and write <code>.moragent/</code> — and so can you.</p>
+    <div class="flow" aria-label="Flow: lead, dispatch, panes, done, memory, Obsidian">
+      <span class="node hl">lead</span><span class="arr">→</span>
+      <span class="node">mora dispatch</span><span class="arr">→</span>
+      <span class="node">panes</span><span class="arr">→</span>
+      <span class="node">mora done</span><span class="arr">→</span>
+      <span class="node">memory</span><span class="arr">→</span>
+      <span class="node hl">Obsidian</span>
+    </div>
+    <div class="cards">
+      <div class="card"><span class="tag">crew</span><h3>Roles, not prompts</h3><p>Each role has a mission and a CLI. Presets <code>solo</code>, <code>duo</code>, <code>trio</code>, <code>squad</code>. Swap with <code>mora crew set</code>.</p></div>
+      <div class="card"><span class="tag">bus</span><h3>Tasks as files</h3><p><code>queued → sent → running → done | failed | blocked</code>. Workers close with <code>mora done</code> or <code>mora block</code>.</p></div>
+      <div class="card"><span class="tag">memory</span><h3>Three layers + skills</h3><p><b>canonical</b> decisions, <b>episodic</b> results, <b>transient</b> scratch that expires, and <b>skills</b> synced to every CLI.</p></div>
+      <div class="card"><span class="tag">sdd</span><h3>Phases the binary decides</h3><p><code>explore → propose → spec → design → tasks → apply → verify → archive</code>, derived from the files. <code>mora spec next</code>.</p></div>
+      <div class="card"><span class="tag">brain</span><h3>Obsidian second brain</h3><p><code>mora brain link</code> puts <code>.moragent/</code> in your vault. Frontmatter, <code>[[wikilinks]]</code> and a generated <code>Home.md</code>.</p></div>
+      <div class="card"><span class="tag">plugin</span><h3>Claude Code &amp; Codex</h3><p>The repo is a plugin for both: lead, worker, spec and memory skills that call <code>mora</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="support">
+  <div class="wrap">
+    <p class="kicker">Support</p>
+    <h2>Bring the agents you already have.</h2>
+    <p class="sub">One canonical <code>AGENTS.md</code>; MORAGENT writes a marked block in the file each CLI reads and never touches text outside the markers.</p>
+    <div class="two">
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Agent CLI</th><th>Reads</th></tr></thead>
+          <tbody>
+            <tr><td>Claude Code <code>claude</code></td><td><code>CLAUDE.md</code></td></tr>
+            <tr><td>Codex <code>codex</code></td><td><code>AGENTS.md</code></td></tr>
+            <tr><td>Antigravity <code>agy</code></td><td><code>GEMINI.md</code> <code>AGENTS.md</code></td></tr>
+            <tr><td>Pi <code>pi</code></td><td><code>AGENTS.md</code></td></tr>
+            <tr><td>OpenCode <code>opencode</code></td><td><code>AGENTS.md</code></td></tr>
+            <tr><td>Gemini CLI <code>gemini</code></td><td><code>GEMINI.md</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Multiplexer</th><th>Picked when</th></tr></thead>
+          <tbody>
+            <tr><td>Orca</td><td>running inside Orca</td></tr>
+            <tr><td>herdr</td><td><code>HERDR_ENV=1</code></td></tr>
+            <tr><td>tmux</td><td>inside tmux, or tmux installed</td></tr>
+            <tr><td>headless</td><td>nothing else — background runs, logs in <code>.moragent/runs/</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <p class="kicker">FAQ</p>
+    <h2>Coming from a chat window?</h2>
+    <p class="sub">You don't need to know tmux or any agent jargon to start.</p>
+    <details><summary>Do I need to know tmux?</summary><p>No. Inside Orca or herdr panes open by themselves. With only tmux installed, MORAGENT creates the session and prints the one command to attach. With nothing, agents run headless and you follow the board.</p></details>
+    <details><summary>Is it one AI or several?</summary><p>Several independent agent CLIs, each in its own pane and signed in with its own account. MORAGENT gives them a shared to-do list and a shared memory.</p></details>
+    <details><summary>Does it send my code anywhere?</summary><p>MORAGENT itself makes no network calls. The agent CLIs you run talk to their own providers, exactly as they do without MORAGENT.</p></details>
+    <details><summary>What does it cost?</summary><p>MORAGENT is free and MIT-licensed. Each agent CLI uses your existing subscription or API key.</p></details>
+    <details><summary>I only have Claude Code.</summary><p>That works — every role can use the same CLI. <code>mora doctor</code> tells you what's missing and how to install it.</p></details>
+    <details><summary>Can I undo it?</summary><p>Everything lives in <code>.moragent/</code> plus a marked block in <code>AGENTS.md</code> / <code>CLAUDE.md</code> / <code>GEMINI.md</code>. Delete those and you're back where you started.</p></details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a class="star" href="https://github.com/EduardoMoraga/moragent">★ Star on GitHub</a>
+    <p>If MORAGENT saves you a few context switches, a star helps other people find it.<br>MIT © Eduardo Moraga · <a href="https://github.com/EduardoMoraga/moragent/blob/main/README.es.md">Leer en español</a></p>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const root = document.documentElement;
+  const store = { get: () => { try { return localStorage.getItem('theme'); } catch { return null; } }, set: (v) => { try { localStorage.setItem('theme', v); } catch {} } };
+  const saved = store.get();
+  if (saved) root.dataset.theme = saved;
+  document.getElementById('theme').addEventListener('click', () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    store.set(root.dataset.theme);
+  });
+  const tabs = document.querySelectorAll('.tabs button');
+  tabs.forEach((b) => b.addEventListener('click', () => {
+    tabs.forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+    document.querySelectorAll('.cmd').forEach((p) => p.classList.toggle('on', p.dataset.panel === b.dataset.tab));
+  }));
+  document.querySelectorAll('.copy').forEach((btn) => btn.addEventListener('click', async () => {
+    const text = btn.previousElementSibling.textContent;
+    try { await navigator.clipboard.writeText(text); btn.textContent = 'copied'; } catch { btn.textContent = 'select ↑'; }
+    setTimeout(() => { btn.textContent = 'copy'; }, 1400);
+  }));
+})();
+</script>
+</body>
+</html>
