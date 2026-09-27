@@ -19,12 +19,12 @@
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.sh | sh
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/EduardoMoraga/moragent/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.ps1 | iex
 ```
 
 <sub>Prefer npm? `npm i -g github:EduardoMoraga/moragent` · try without installing: `npx github:EduardoMoraga/moragent`</sub>
