@@ -3,7 +3,7 @@ import path from 'node:path';
 import { requireRoot, dirs } from '../core/paths.js';
 import { loadConfig } from '../core/config.js';
 import { json, out, ok, warn, info, c } from '../core/log.js';
-import { t } from '../core/i18n.js';
+import { t, setLang } from '../core/i18n.js';
 import { run } from '../core/exec.js';
 import { exists, listFiles } from '../core/fsx.js';
 import { MoragentError } from '../core/errors.js';
@@ -21,6 +21,8 @@ export default {
   usage: 'mora brain [link|sync|open|status] [--vault <path|name>] [--folder Moragent] [--copy] [--json]',
 
   async run(argv, ctx) {
+    if (ctx.lang) setLang(ctx.lang);
+    if (argv.flags.lang) setLang(argv.flags.lang);
     const root = ctx.root || requireRoot();
     const cfg = loadConfig(root);
     const sub = argv._[0] || 'status';
@@ -45,7 +47,7 @@ export default {
         } else if (process.stdin.isTTY && !ctx.json) {
           out(c.bold(t('Múltiples Obsidian vaults encontrados:', 'Multiple Obsidian vaults found:')));
           vaults.forEach((v, idx) => {
-            const openTag = v.open ? c.green(' [abierto]') : '';
+            const openTag = v.open ? c.green(t(' [abierto]', ' [open]')) : '';
             out(`  ${c.cyan(String(idx + 1))}) ${v.name} (${c.dim(v.path)})${openTag}`);
           });
 
@@ -178,11 +180,23 @@ export default {
         out(`  ${t('Destino', 'Destination')}: ${targetPath}`);
       }
       out(`  ${t('Home MOC', 'Home MOC')}: ${hasHome ? c.green('Home.md') : c.dim(t('No generado', 'Not generated'))}`);
-      out(`  ${t('Memoria', 'Memory')}: ${c.cyan(`${canonicalCount} canónicas`)}, ${c.green(`${episodicCount} episódicas`)}, ${c.yellow(`${transientCount} transitorias`)}`);
+      const canStr = t(
+        canonicalCount === 1 ? '1 canónica' : `${canonicalCount} canónicas`,
+        `${canonicalCount} canonical`
+      );
+      const epiStr = t(
+        episodicCount === 1 ? '1 episódica' : `${episodicCount} episódicas`,
+        `${episodicCount} episodic`
+      );
+      const traStr = t(
+        transientCount === 1 ? '1 transitoria' : `${transientCount} transitorias`,
+        `${transientCount} transient`
+      );
+      out(`  ${t('Memoria', 'Memory')}: ${c.cyan(canStr)}, ${c.green(epiStr)}, ${c.yellow(traStr)}`);
       out(`  ${t('Tareas', 'Tasks')}: ${taskCount}`);
       return 0;
     }
 
-    throw new MoragentError('USAGE', `Unknown brain subcommand: ${sub}`, this.usage);
+    throw new MoragentError('USAGE', t(`Subcomando de brain desconocido: ${sub}`, `Unknown brain subcommand: ${sub}`), this.usage);
   },
 };

@@ -8,7 +8,11 @@ import { detectMux, getMux } from '../src/mux/index.js';
 import { paneCommand } from '../src/mux/util.js';
 import headless, { clearHeadlessCache, headlessStatePath } from '../src/mux/headless.js';
 import { readJSON, writeJSON, writeText } from '../src/core/fsx.js';
+import { ensureShim, shimDir } from '../src/core/shim.js';
+import { createTask, getTask, updateTask } from '../src/bus/tasks.js';
 import dispatchCommand from '../src/commands/dispatch.js';
+import downCommand from '../src/commands/down.js';
+import resendCommand from '../src/commands/resend.js';
 import { loadPanes, savePanes } from '../src/crew/panes.js';
 
 afterEach(() => resetExec());
@@ -18,16 +22,81 @@ test('orca parses nested handles and keeps spaced commands as one argument', () 
   setExec((cmd, args) => {
     calls.push([cmd, args]);
     if (args[1] === 'split') return { code: 0, stdout: JSON.stringify({ ok: true, result: { terminal: { handle: 'term-42' } } }), stderr: '' };
-    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ terminals: [{ handle: 'term-42' }] }), stderr: '' };
+    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ ok: true, result: { terminals: [{ handle: 'term-1', tabId: 'tab-1' }, { handle: 'term-42', tabId: 'tab-1' }] } }), stderr: '' };
     return { code: 0, stdout: '', stderr: '' };
   });
   const mux = getMux('orca');
   const pane = mux.spawn({ root: '/tmp/project space', role: 'backend', cwd: '/tmp/project space', command: "codex 'do work'", anchor: 'term-1' });
   assert.equal(pane.handle, 'term-42');
-  assert.equal(calls[0][1][calls[0][1].indexOf('--command') + 1], "cd '/tmp/project space' && MORAGENT_ROLE=backend codex 'do work'");
+  const split = calls.find((call) => call[1][1] === 'split');
+  assert.equal(split[1][split[1].indexOf('--command') + 1], "cd '/tmp/project space' && MORAGENT_ROLE=backend codex 'do work'");
   assert.equal(mux.alive('term-42'), true);
   mux.send('term-42', 'hello world');
   assert.ok(calls.at(-1)[1].includes('--enter'));
+});
+
+test('orca falls back from a failed split to a titled tab', () => {
+  const calls = [];
+  setExec((cmd, args) => {
+    calls.push([cmd, args]);
+    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ ok: true, result: { terminals: [{ handle: 'term-anchor', tabId: 'tab-1' }] } }), stderr: '' };
+    if (args[1] === 'split') return { code: 1, stdout: '', stderr: 'Timed out waiting for split pane handle' };
+    if (args[1] === 'create') return { code: 0, stdout: JSON.stringify({ ok: true, result: { terminal: { handle: 'term-tab' } } }), stderr: '' };
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  const pane = getMux('orca').spawn({ root: '/tmp/p', role: 'backend', command: 'codex', anchor: 'term-anchor' });
+  assert.deepEqual(pane, { handle: 'term-tab', layout: 'tab' });
+  assert.deepEqual(calls.map((call) => call[1][1]), ['list', 'split', 'create']);
+  const create = calls.find((call) => call[1][1] === 'create');
+  assert.deepEqual(create[1].slice(2, 4), ['--title', 'backend']);
+});
+
+test('orca opens a tab without attempting split when the anchor tab already has four panes', () => {
+  const calls = [];
+  setExec((cmd, args) => {
+    calls.push([cmd, args]);
+    if (args[1] === 'list') return {
+      code: 0,
+      stdout: JSON.stringify({ ok: true, result: { terminals: ['anchor', 'two', 'three', 'four'].map((handle) => ({ handle, tabId: 'tab-full' })) } }),
+      stderr: '',
+    };
+    if (args[1] === 'create') return { code: 0, stdout: JSON.stringify({ handle: 'term-new-tab' }), stderr: '' };
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  const pane = getMux('orca').spawn({ root: '/tmp/p', role: 'helper', command: 'pi', anchor: 'anchor' });
+  assert.deepEqual(pane, { handle: 'term-new-tab', layout: 'tab' });
+  assert.deepEqual(calls.map((call) => call[1][1]), ['list', 'create']);
+});
+
+test('orca tabs layout skips split and closes the whole tab', () => {
+  const calls = [];
+  setExec((cmd, args) => {
+    calls.push([cmd, args]);
+    if (args[1] === 'split') throw new Error('split must not be called for tabs layout');
+    if (args[1] === 'create') return { code: 0, stdout: JSON.stringify({ handle: 'term-tabs' }), stderr: '' };
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  const mux = getMux('orca');
+  const pane = mux.spawn({ root: '/tmp/p', role: 'frontend', command: 'codex', anchor: 'term-anchor', layout: 'tabs' });
+  assert.deepEqual(pane, { handle: 'term-tabs', layout: 'tab' });
+  assert.equal(calls.filter((call) => call[1][1] === 'create').length, 1);
+  assert.equal(calls.some((call) => call[1][1] === 'split'), false);
+  mux.close(pane.handle, { layout: pane.layout });
+  assert.deepEqual(calls.at(-1)[1], ['terminal', 'close', '--terminal', 'term-tabs', '--tab']);
+});
+
+test('down forwards a registered Orca tab layout and removes the pane', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-down-tab-'));
+  const calls = [];
+  savePanes(root, { backend: { mux: 'orca', handle: 'term-tabs', layout: 'tab', cli: 'codex' } });
+  setExec((cmd, args) => {
+    calls.push([cmd, args]);
+    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ terminals: [{ handle: 'term-tabs' }] }), stderr: '' };
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  await downCommand.run({ _: ['backend'], flags: {} }, { root, json: false });
+  assert.deepEqual(calls.find((call) => call[1][1] === 'close')[1], ['terminal', 'close', '--terminal', 'term-tabs', '--tab']);
+  assert.equal(loadPanes(root).backend, undefined);
 });
 
 test('herdr maps directions and uses run for entered text', () => {
@@ -76,6 +145,14 @@ test('pane command supports Windows cwd and role syntax', () => {
   assert.equal(paneCommand({ root: '/tmp/a b', command: 'pi' }), "cd '/tmp/a b' && pi");
 });
 
+test('pane command prepends an existing project shim to PATH', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-pane-shim-'));
+  ensureShim(root);
+  const command = paneCommand({ root, role: 'backend', command: 'codex' });
+  assert.match(command, new RegExp(`PATH=${shimDir(root).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:"\\$PATH"`));
+  assert.match(command, /MORAGENT_ROLE=backend/);
+});
+
 test('headless state survives memory cache loss and dead processes are not alive', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-headless-'));
   const { handle } = headless.spawn({
@@ -118,6 +195,42 @@ test('dispatch removes a dead registered pane before headless fallback', async (
   } finally {
     process.env.PATH = oldPath;
   }
+});
+
+test('resend checks readiness and resends a queued task to its live role pane', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-resend-'));
+  const task = createTask({ root, role: 'backend', body: 'Implement the retry' });
+  savePanes(root, { backend: { mux: 'orca', handle: 'term-backend', cli: 'codex' } });
+  const calls = [];
+  let blocked = true;
+  setExec((cmd, args) => {
+    calls.push([cmd, args]);
+    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ ok: true, result: { terminals: [{ handle: 'term-backend', tabId: 'tab-1' }] } }), stderr: '' };
+    if (args[1] === 'read') return {
+      code: 0,
+      stdout: JSON.stringify({ ok: true, result: { terminal: { tail: blocked ? ['Do you trust the files in this folder?'] : ['Ready', '›'] } } }),
+      stderr: '',
+    };
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  const ctx = { root, config: { lang: 'en', crew: { backend: { cli: 'codex', mission: 'Build backend.' } } }, json: false };
+  await assert.rejects(
+    resendCommand.run({ _: [task.id], flags: {} }, ctx),
+    (error) => error.code === 'PANE_NOT_READY',
+  );
+  assert.equal(calls.some((call) => call[1][1] === 'send'), false);
+  blocked = false;
+  await resendCommand.run({ _: [task.id], flags: {} }, ctx);
+  const sent = calls.find((call) => call[1][1] === 'send');
+  assert.equal(sent[1][sent[1].indexOf('--text') + 1], `Read and execute .moragent/tasks/${task.id}.md`);
+  assert.equal(getTask(root, task.id).status, 'sent');
+  assert.equal(fs.existsSync(path.join(root, '.moragent', 'tasks', `${task.id}.md`)), true);
+
+  updateTask(root, task.id, { status: 'done' });
+  await assert.rejects(
+    resendCommand.run({ _: [task.id], flags: {} }, ctx),
+    (error) => error.code === 'TASK_NOT_RESENDABLE',
+  );
 });
 
 test('orca read joins the real tail array response', () => {

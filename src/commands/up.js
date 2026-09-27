@@ -68,7 +68,7 @@ export default {
         continue;
       }
       if (alive) {
-        mux.close(current.handle);
+        mux.close(current.handle, { layout: current.layout });
         delete panes[role];
       }
       if (argv.flags['dry-run']) {
@@ -76,8 +76,8 @@ export default {
         continue;
       }
       const result = mux.spawn({ root, role, title: member.title || role, command, cwd: root, anchor, member, adapter, autonomy, layout: cfg.layout || 'split' });
-      panes[role] = { mux: muxName, handle: result.handle, cli: member.cli, autonomy, startedAt: nowISO() };
-      opened.push({ role, cli: member.cli, mux: muxName, handle: result.handle, status: 'opened', session: result.session });
+      panes[role] = { mux: muxName, handle: result.handle, cli: member.cli, autonomy, layout: result.layout, startedAt: nowISO() };
+      opened.push({ role, cli: member.cli, mux: muxName, handle: result.handle, layout: result.layout, status: 'opened', session: result.session });
       anchor = result.handle;
     }
     if (!argv.flags['dry-run']) savePanes(root, panes);

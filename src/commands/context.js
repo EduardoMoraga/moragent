@@ -1,6 +1,7 @@
 import { requireRoot } from '../core/paths.js';
 import { json, out } from '../core/log.js';
 import { MoragentError } from '../core/errors.js';
+import { setLang } from '../core/i18n.js';
 import { contextPack } from '../memory/index.js';
 
 export default {
@@ -14,6 +15,8 @@ export default {
   usage: 'mora context <role> [--query "…"] [--budget 6000] [--json]',
 
   async run(argv, ctx) {
+    if (ctx.lang) setLang(ctx.lang);
+    if (argv.flags.lang) setLang(argv.flags.lang);
     const root = ctx.root || requireRoot();
     const role = argv._[0];
 

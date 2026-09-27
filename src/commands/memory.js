@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { requireRoot, findRoot, dirs } from '../core/paths.js';
 import { json, out, ok, info, err, c } from '../core/log.js';
-import { t } from '../core/i18n.js';
+import { t, setLang } from '../core/i18n.js';
 import { MoragentError } from '../core/errors.js';
 import { add, list, recall, promote, gc, getNote } from '../memory/index.js';
 import { captureClaude, captureCodex } from '../memory/capture.js';
@@ -18,6 +18,8 @@ export default {
   usage: 'mora memory [add|list|recall|promote|gc|show|capture] [args...] [--json]',
 
   async run(argv, ctx) {
+    if (ctx.lang) setLang(ctx.lang);
+    if (argv.flags.lang) setLang(argv.flags.lang);
     const sub = argv._[0] || 'list';
 
     if (sub === 'capture') {
@@ -216,14 +218,17 @@ export default {
       }
 
       out(c.bold(note.title));
-      out(c.dim(`ID: ${note.id} | Tier: ${note.tier} | Kind: ${note.kind} | Author: @${note.by || 'unknown'} | Date: ${note.created || 'unknown'}`));
-      if (note.tags?.length) out(c.dim(`Tags: ${note.tags.join(', ')}`));
-      if (note.links?.length) out(c.dim(`Links: ${note.links.map((l) => `[[${l}]]`).join(' ')}`));
+      const authorLabel = t('Autor', 'Author');
+      const dateLabel = t('Fecha', 'Date');
+      const unkLabel = t('desconocido', 'unknown');
+      out(c.dim(`ID: ${note.id} | Tier: ${note.tier} | Kind: ${note.kind} | ${authorLabel}: @${note.by || unkLabel} | ${dateLabel}: ${note.created || unkLabel}`));
+      if (note.tags?.length) out(c.dim(`${t('Etiquetas', 'Tags')}: ${note.tags.join(', ')}`));
+      if (note.links?.length) out(c.dim(`${t('Enlaces', 'Links')}: ${note.links.map((l) => `[[${l}]]`).join(' ')}`));
       out('');
       out(note.body || c.italic(t('_Sin contenido adicional._', '_No additional content._')));
       return 0;
     }
 
-    throw new MoragentError('USAGE', `Unknown subcommand: ${sub}`, this.usage);
+    throw new MoragentError('USAGE', t(`Subcomando desconocido: ${sub}`, `Unknown subcommand: ${sub}`), this.usage);
   },
 };

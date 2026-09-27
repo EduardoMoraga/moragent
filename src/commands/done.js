@@ -1,3 +1,4 @@
+import { refreshBrain } from '../core/brain-refresh.js';
 import { requireRoot } from '../core/paths.js';
 import { flagList } from '../core/args.js';
 import { MoragentError } from '../core/errors.js';
@@ -30,6 +31,7 @@ export default {
     const files = flagList(argv.flags.files);
     const task = updateTask(root, id, { status: 'done', result: summary.trim(), files: files.length ? files : before.files || [] });
     await remember(root, task, summary.trim());
+    await refreshBrain(root);
     if (ctx.json) json({ ok: true, task });
     else ok(t(`${task.id} terminada.`, `${task.id} done.`));
     return 0;

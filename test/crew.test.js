@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { ADAPTERS, autonomyFor, getAdapter } from '../src/crew/adapters.js';
 import { flagOn, isCurrentLead } from '../src/commands/up.js';
-import { assertPaneReady } from '../src/commands/dispatch.js';
+import dispatchCommand, { assertPaneReady } from '../src/commands/dispatch.js';
+import { sizeIdea } from '../src/commands/plan.js';
 
 test('all documented adapters expose a consistent interface', () => {
   assert.deepEqual(Object.keys(ADAPTERS), ['claude', 'codex', 'agy', 'pi', 'opencode', 'gemini']);
@@ -22,7 +26,7 @@ test('headless adapter commands match supported CLI flags', () => {
     '-p', 'fix it',
   ]);
   assert.deepEqual(ADAPTERS.codex.headless({ prompt: 'fix it' }), ['codex', 'exec', '-s', 'workspace-write', 'fix it']);
-  assert.deepEqual(ADAPTERS.agy.headless({ prompt: 'fix it' }), ['agy', '--mode', 'accept-edits', '-p', 'fix it']);
+  assert.deepEqual(ADAPTERS.agy.headless({ prompt: 'fix it' }), ['agy', '--sandbox', '--dangerously-skip-permissions', '-p', 'fix it']);
   assert.deepEqual(ADAPTERS.pi.headless({ prompt: 'fix it' }), ['pi', '-p', 'fix it']);
   assert.deepEqual(ADAPTERS.opencode.headless({ prompt: 'fix it' }), ['opencode', 'run', 'fix it']);
   assert.deepEqual(ADAPTERS.gemini.headless({ prompt: 'fix it' }), ['gemini', '--approval-mode', 'auto_edit', '-p', 'fix it']);
@@ -37,7 +41,7 @@ test('interactive command applies autonomy, quoting and role options', () => {
   assert.equal(command, "codex -s workspace-write -a never --model 'o 3' --profile 'team profile'");
   assert.equal(ADAPTERS.codex.interactive({ autonomy: 'full' }), 'codex --dangerously-bypass-approvals-and-sandbox');
   assert.equal(ADAPTERS.codex.interactive({ autonomy: 'ask' }), 'codex');
-  assert.equal(ADAPTERS.agy.interactive({ autonomy: 'auto' }), 'agy --mode accept-edits');
+  assert.equal(ADAPTERS.agy.interactive({ autonomy: 'auto' }), 'agy --sandbox --dangerously-skip-permissions');
   assert.equal(ADAPTERS.gemini.interactive({ autonomy: 'full' }), 'gemini --yolo');
   assert.match(ADAPTERS.claude.interactive(), /--permission-mode acceptEdits/);
   assert.match(ADAPTERS.claude.interactive(), /'Bash\(mora:\*\)'/);
@@ -66,12 +70,43 @@ test('lead pane is reused only when the current agent matches the configured lea
 });
 
 test('dispatch detects trust prompts in Orca before sending', () => {
-  const mux = { name: 'orca', read: () => 'Do you trust the files in this folder?' };
+  const mux = { name: 'orca', read: () => 'Codex startup\nDo you trust the files in this folder?' };
   assert.throws(
     () => assertPaneReady(mux, { handle: 'term-1' }, 'backend'),
     (error) => error.code === 'PANE_NOT_READY' && /backend/.test(error.hint),
   );
+  const accepted = [
+    'Do you trust the files in this folder?',
+    'Accepted',
+    'session ready',
+    'workspace loaded',
+    'model selected',
+    'instructions loaded',
+    'tools ready',
+    'context ready',
+    'waiting for input',
+    '',
+    '›',
+  ].join('\n');
+  assert.doesNotThrow(() => assertPaneReady({ name: 'orca', read: () => accepted }, { handle: 'term-2' }, 'frontend'));
   assert.doesNotThrow(() => assertPaneReady({ name: 'tmux' }, { handle: '%1' }, 'backend'));
+});
+
+test('plan preset contains and agrees with all three recommended roles', () => {
+  const estimate = sizeIdea('Construir una API con interfaz web');
+  assert.equal(estimate.preset, 'trio');
+  assert.deepEqual(estimate.roles, ['lead', 'backend', 'frontend']);
+});
+
+test('dispatch rejects a missing requested spec with a creation hint', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-missing-spec-'));
+  await assert.rejects(
+    dispatchCommand.run(
+      { _: ['backend', 'implement it'], flags: { spec: 'Checkout Flow' } },
+      { root, config: { lang: 'en', crew: { backend: { cli: 'codex' } } }, json: false },
+    ),
+    (error) => error.code === 'SPEC_NOT_FOUND' && error.hint === 'mora spec new checkout-flow',
+  );
 });
 
 test('boolean CLI values are normalized without becoming roles', () => {

@@ -1,6 +1,7 @@
-import { requireRoot } from '../core/paths.js';
+import path from 'node:path';
+import { dirs, requireRoot } from '../core/paths.js';
 import { loadConfig } from '../core/config.js';
-import { nowISO } from '../core/fsx.js';
+import { exists, nowISO, slugify } from '../core/fsx.js';
 import { MoragentError } from '../core/errors.js';
 import { t } from '../core/i18n.js';
 import { json, ok, info } from '../core/log.js';
@@ -14,7 +15,7 @@ import { getMux } from '../mux/index.js';
 
 // Startup dialogs that swallow a prompt: folder trust (Claude, Codex, agy) and update menus.
 // Only the bottom of the screen matters — an accepted dialog stays visible in the scrollback above.
-const BLOCKING_DIALOG = /(?:do you trust|trust this folder|conf[ií]as en|press enter to continue|enter to confirm)/i;
+const BLOCKING_DIALOG = /(?:do you trust|trust this folder|do not trust|conf[ií]as en|press enter to continue|enter to confirm|enter select)/i;
 
 export function assertPaneReady(mux, pane, role) {
   if (mux.name !== 'orca') return;
@@ -41,6 +42,12 @@ export default {
     if (!role || !body) throw new MoragentError('USAGE', this.usage);
     const member = cfg.crew?.[role];
     if (!member) throw new MoragentError('UNKNOWN_ROLE', t(`Rol desconocido: ${role}`, `Unknown role: ${role}`));
+    const requestedSpec = typeof argv.flags.spec === 'string' ? slugify(argv.flags.spec) : null;
+    if (requestedSpec && !exists(path.join(dirs(root).specs, requestedSpec))) throw new MoragentError(
+      'SPEC_NOT_FOUND',
+      t(`No existe la spec ${requestedSpec}.`, `Spec ${requestedSpec} does not exist.`),
+      `mora spec new ${requestedSpec}`,
+    );
     const adapter = getAdapter(member.cli);
     const panes = loadPanes(root);
     if (!argv.flags['dry-run']) ensureShim(root);
@@ -63,7 +70,7 @@ export default {
       mux = getMux('headless');
     }
     if (argv.flags['dry-run']) {
-      const preview = { id: nextId(root), role, cli: member.cli, mux: mux.name, body, spec: argv.flags.spec || null };
+      const preview = { id: nextId(root), role, cli: member.cli, mux: mux.name, body, spec: requestedSpec };
       if (ctx.json) json({ ok: true, dryRun: true, task: preview });
       else info(t(`Simulación: ${preview.id} se enviaría a ${role} vía ${mux.name}.`, `Dry run: ${preview.id} would be sent to ${role} via ${mux.name}.`));
       return 0;
@@ -74,7 +81,7 @@ export default {
       title: typeof argv.flags.title === 'string' ? argv.flags.title : undefined,
       role,
       body,
-      spec: typeof argv.flags.spec === 'string' ? argv.flags.spec : null,
+      spec: requestedSpec,
       by: 'lead',
     });
     const envelope = await writeEnvelope({ root, task, config: cfg });

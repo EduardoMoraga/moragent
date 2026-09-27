@@ -1,3 +1,4 @@
+import { refreshBrain } from '../core/brain-refresh.js';
 import { requireRoot } from '../core/paths.js';
 import { MoragentError } from '../core/errors.js';
 import { t } from '../core/i18n.js';
@@ -28,6 +29,7 @@ export default {
     getTask(root, id);
     const task = updateTask(root, id, { status: 'blocked', result: reason.trim() });
     await remember(root, task, reason.trim());
+    await refreshBrain(root);
     if (ctx.json) json({ ok: true, task });
     else warn(t(`${task.id} bloqueada: ${reason.trim()}`, `${task.id} blocked: ${reason.trim()}`));
     return 0;

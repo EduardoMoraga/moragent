@@ -23,7 +23,7 @@ export default {
       }
       const mux = getMux(pane.mux);
       if (mux.alive(pane.handle)) {
-        if (!argv.flags['dry-run']) mux.close(pane.handle);
+        if (!argv.flags['dry-run']) mux.close(pane.handle, { layout: pane.layout });
       }
       else {
         if (!argv.flags['dry-run'] && pane.mux === 'headless') mux.close(pane.handle);

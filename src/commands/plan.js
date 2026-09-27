@@ -14,6 +14,15 @@ const SIGNALS = {
   data: /\b(datos|data|analytics|m[eé]trica|etl|modelo|machine learning|ia|ai)\b/i,
 };
 
+const PRESET_ROLES = {
+  solo: ['lead'],
+  duo: ['lead', 'backend'],
+  trio: ['lead', 'backend', 'frontend'],
+  squad: ['lead', 'backend', 'frontend', 'helper', 'dev'],
+};
+
+const presetForCount = (count) => count <= 1 ? 'solo' : count <= 2 ? 'duo' : count <= 3 ? 'trio' : 'squad';
+
 export function sizeIdea(idea) {
   const roles = ['lead'];
   let domains = 0;
@@ -27,12 +36,14 @@ export function sizeIdea(idea) {
   const components = idea.split(/,|;|\by\b|\band\b/gi).filter((part) => part.trim().length > 8).length;
   const score = Math.ceil(idea.length / 100) + domains * 2 + Math.min(components, 4);
   const size = score <= 3 ? 'S' : score <= 6 ? 'M' : score <= 10 ? 'L' : 'XL';
-  const preset = size === 'S' ? 'solo' : size === 'M' ? 'duo' : size === 'L' ? 'trio' : 'squad';
-  const wanted = preset === 'solo' ? ['lead']
-    : preset === 'duo' ? ['lead', 'backend']
-      : preset === 'trio' ? ['lead', 'backend', 'frontend']
-        : ['lead', 'backend', 'frontend', 'helper', 'dev'];
-  for (const role of roles) if (!wanted.includes(role)) wanted.push(role);
+  let preset = size === 'S' ? 'solo' : size === 'M' ? 'duo' : size === 'L' ? 'trio' : 'squad';
+  let wanted = [...new Set([...PRESET_ROLES[preset], ...roles])];
+  for (;;) {
+    const coherent = presetForCount(wanted.length);
+    if (coherent === preset) break;
+    preset = coherent;
+    wanted = [...new Set([...PRESET_ROLES[preset], ...wanted])];
+  }
   return { size, preset, roles: wanted, score, domains, components };
 }
 

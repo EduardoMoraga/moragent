@@ -22,7 +22,9 @@ const MODES = {
     ask: [],
   },
   agy: {
-    auto: ['--mode', 'accept-edits'],
+    // accept-edits still prompts for every shell command (even `mora done`), which stalls a pane.
+    // The sandbox confines writes to the workspace, so skipping prompts inside it is the safe default.
+    auto: ['--sandbox', '--dangerously-skip-permissions'],
     full: ['--dangerously-skip-permissions'],
     ask: [],
   },

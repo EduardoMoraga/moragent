@@ -5,17 +5,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { defaultConfig, loadConfig } from '../src/core/config.js';
 import { scaffold } from '../src/commands/init.js';
-import { writeJSON, ensureDir } from '../src/core/fsx.js';
+import { writeJSON, writeText, ensureDir } from '../src/core/fsx.js';
 import { setExec, resetExec } from '../src/core/exec.js';
-import { findVaults, link, buildHome, sync } from '../src/brain/obsidian.js';
+import { findVaults, link, buildHome, sync, resolveGoal } from '../src/brain/obsidian.js';
 import brainCmd from '../src/commands/brain.js';
 import { add } from '../src/memory/index.js';
 
 const tmp = (prefix = 'mora-brain-') => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 
-const setupProject = (name = 'demo-project') => {
+const setupProject = (name = 'demo-project', overrides = {}) => {
   const root = tmp('mora-proj-');
-  const cfg = defaultConfig({ project: name, lang: 'es', preset: 'squad' });
+  const base = defaultConfig({ project: name, lang: overrides.lang || 'es', preset: overrides.preset || 'squad' });
+  const cfg = { ...base, ...overrides };
   scaffold(root, cfg);
   return { root, cfg };
 };
@@ -126,16 +127,18 @@ test('brain: buildHome generates Map of Content with crew, tasks, memory, and wi
   assert.ok(fs.existsSync(homePath));
 
   const content = fs.readFileSync(homePath, 'utf8');
-  assert.match(content, /# my-system — Map of Content/);
-  assert.match(content, /## Project Goal/);
-  assert.match(content, /## Crew/);
+  assert.match(content, /# my-system — Mapa de contenido/);
+  assert.match(content, /## Objetivo del proyecto/);
+  assert.match(content, /Sin objetivo — edita \.moragent\/memory\/canonical\/project\.md/);
+  assert.ok(!content.includes('Autonomous agentic development workspace'));
+  assert.match(content, /## Equipo/);
   assert.match(content, /Lead/);
   assert.match(content, /Backend/);
-  assert.match(content, /## Tasks/);
+  assert.match(content, /## Tareas/);
   assert.match(content, /\[\[tasks\/T-0001\.md\|T-0001\]\]: Setup authentication system/);
-  assert.match(content, /## Canonical Decisions/);
+  assert.match(content, /## Decisiones canónicas/);
   assert.match(content, /Session Cookie Settings/);
-  assert.match(content, /## Recent Episodes/);
+  assert.match(content, /## Episodios recientes/);
   assert.match(content, /Initial Sprint Planning/);
   assert.match(content, /```dataview/);
 });
@@ -208,3 +211,149 @@ test('CLI: brain command link, status, sync, and open with setExec stub', async 
     resetExec();
   }
 });
+
+test('CLI: brain status respects --lang en printing English counters and labels', async () => {
+  const { root } = setupProject('omega-en');
+  const vaultDir = tmp('mora-vlt-');
+  ensureDir(path.join(vaultDir, '.obsidian'));
+
+  // Link to vault
+  await link({ root, vault: vaultDir, folder: 'Moragent', mode: 'link' });
+
+  // Add sample memories (2 canonical, 1 episodic, 0 transient)
+  add({ root, tier: 'canonical', title: 'Architecture Decision 1', body: 'Use microservices.' });
+  add({ root, tier: 'canonical', title: 'Architecture Decision 2', body: 'Use JWT.' });
+  add({ root, tier: 'episodic', title: 'Sprint 1 Review', body: 'Completed auth.' });
+
+  // Test in English
+  const ctxEn = { root, json: false, lang: 'en' };
+  let logsEn = [];
+  const origOut = process.stdout.write;
+  process.stdout.write = (chunk) => { logsEn.push(String(chunk)); return true; };
+
+  try {
+    await brainCmd.run({ _: ['status'], flags: { lang: 'en' } }, ctxEn);
+  } finally {
+    process.stdout.write = origOut;
+  }
+
+  const outputEn = logsEn.join('');
+  // Check English headers and labels
+  assert.match(outputEn, /Obsidian Second Brain status:/);
+  assert.match(outputEn, /Linked:.*Yes/);
+  assert.match(outputEn, /Memory:.*3 canonical.*1 episodic.*0 transient/);
+  assert.ok(!outputEn.includes('canónicas'));
+  assert.ok(!outputEn.includes('episódicas'));
+  assert.ok(!outputEn.includes('transitorias'));
+
+  // Test in Spanish
+  const ctxEs = { root, json: false, lang: 'es' };
+  let logsEs = [];
+  process.stdout.write = (chunk) => { logsEs.push(String(chunk)); return true; };
+
+  try {
+    await brainCmd.run({ _: ['status'], flags: { lang: 'es' } }, ctxEs);
+  } finally {
+    process.stdout.write = origOut;
+  }
+
+  const outputEs = logsEs.join('');
+  assert.match(outputEs, /Estado del Obsidian Second Brain:/);
+  assert.match(outputEs, /Enlazado:.*Sí/);
+  assert.match(outputEs, /Memoria:.*3 canónicas.*1 episódica.*0 transitorias/);
+});
+
+test('brain: buildHome in English uses cfg.goal and generates English section titles', async () => {
+  const { root } = setupProject('en-system', {
+    lang: 'en',
+    goal: 'Build an autonomous multi-agent swarm',
+  });
+
+  const homePath = await buildHome(root);
+  assert.ok(fs.existsSync(homePath));
+  const content = fs.readFileSync(homePath, 'utf8');
+
+  // English header and goal
+  assert.match(content, /# en-system — Map of Content/);
+  assert.match(content, /> Moragent Obsidian Second Brain — Generated/);
+  assert.match(content, /## Project Goal/);
+  assert.match(content, /Build an autonomous multi-agent swarm/);
+  assert.ok(!content.includes('Autonomous agentic development workspace'));
+
+  // English section titles and empty states
+  assert.match(content, /## Crew/);
+  assert.match(content, /## Specs/);
+  assert.match(content, /_No specs defined yet\._/);
+  assert.match(content, /## Tasks/);
+  assert.match(content, /_No tasks registered yet\._/);
+  assert.match(content, /## Canonical Decisions/);
+  assert.match(content, /_No canonical decisions recorded yet\._/);
+  assert.match(content, /## Recent Episodes/);
+  assert.match(content, /_No recent episodes\._/);
+
+  // Assert no Spanish sections
+  assert.ok(!content.includes('Mapa de contenido'));
+  assert.ok(!content.includes('## Objetivo del proyecto'));
+  assert.ok(!content.includes('## Equipo'));
+  assert.ok(!content.includes('## Especificaciones'));
+  assert.ok(!content.includes('## Tareas'));
+  assert.ok(!content.includes('## Decisiones canónicas'));
+  assert.ok(!content.includes('## Episodios recientes'));
+});
+
+test('brain: buildHome resolves goal from project.md body when cfg.goal is not set', async () => {
+  const { root } = setupProject('es-custom-goal', { lang: 'es' });
+
+  // Overwrite project.md with a non-placeholder custom goal
+  const projectMdPath = path.join(root, '.moragent', 'memory', 'canonical', 'project.md');
+  writeText(
+    projectMdPath,
+    `---
+id: project
+tier: canonical
+kind: fact
+title: es-custom-goal
+tags: [project]
+links: []
+by: moragent
+created: 2026-09-27T00:00:00Z
+---
+Desarrollar una plataforma distribuida de trading algorítmico en tiempo real.
+
+Creado con \`mora init\` el 2026-09-27 — preset \`squad\`.
+`
+  );
+
+  const homePath = await buildHome(root);
+  assert.ok(fs.existsSync(homePath));
+  const content = fs.readFileSync(homePath, 'utf8');
+
+  assert.match(content, /## Objetivo del proyecto/);
+  assert.match(content, /Desarrollar una plataforma distribuida de trading algorítmico en tiempo real\./);
+  assert.ok(!content.includes('Sin objetivo — edita'));
+  assert.ok(!content.includes('Autonomous agentic development workspace'));
+});
+
+test('brain: resolveGoal and buildHome show placeholder fallback in English and Spanish', async () => {
+  // English with placeholder
+  const { root: rootEn, cfg: cfgEn } = setupProject('en-default', { lang: 'en' });
+  const goalEn = resolveGoal(rootEn, cfgEn);
+  assert.equal(goalEn, 'No goal yet — edit .moragent/memory/canonical/project.md');
+
+  const homePathEn = await buildHome(rootEn);
+  const contentEn = fs.readFileSync(homePathEn, 'utf8');
+  assert.match(contentEn, /## Project Goal/);
+  assert.match(contentEn, /No goal yet — edit \.moragent\/memory\/canonical\/project\.md/);
+
+  // Spanish with placeholder
+  const { root: rootEs, cfg: cfgEs } = setupProject('es-default', { lang: 'es' });
+  const goalEs = resolveGoal(rootEs, cfgEs);
+  assert.equal(goalEs, 'Sin objetivo — edita .moragent/memory/canonical/project.md');
+
+  const homePathEs = await buildHome(rootEs);
+  const contentEs = fs.readFileSync(homePathEs, 'utf8');
+  assert.match(contentEs, /## Objetivo del proyecto/);
+  assert.match(contentEs, /Sin objetivo — edita \.moragent\/memory\/canonical\/project\.md/);
+});
+
+

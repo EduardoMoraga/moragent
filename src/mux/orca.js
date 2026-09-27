@@ -14,6 +14,17 @@ function handleFrom(text) {
   return typeof terminal === 'string' && /^term[_-]/.test(terminal) ? terminal : null;
 }
 
+// Past this many panes a split leaves every agent too narrow to read (seen live: 11 columns).
+const MAX_SPLITS = 4;
+
+function panesInTab(handle) {
+  const result = run('orca', ['terminal', 'list', '--json']);
+  const list = parseJSON(result.stdout)?.result?.terminals;
+  if (result.code !== 0 || !Array.isArray(list)) return 0;
+  const tab = list.find((term) => term.handle === handle)?.tabId;
+  return tab ? list.filter((term) => term.tabId === tab).length : 0;
+}
+
 export default {
   name: 'orca',
   available: () => !!which('orca'),
@@ -22,7 +33,7 @@ export default {
   spawn({ root, role, title, command, cwd = root, anchor, direction = 'horizontal', layout = 'split' }) {
     const base = anchor || process.env.ORCA_TERMINAL_HANDLE;
     const cmd = command ? paneCommand({ root, role, command }) : null;
-    if (layout !== 'tabs' && base) {
+    if (layout !== 'tabs' && base && panesInTab(base) < MAX_SPLITS) {
       const args = ['split', '--terminal', base, '--direction', direction === 'vertical' ? 'vertical' : 'horizontal'];
       if (cmd) args.push('--command', cmd);
       args.push('--json');
@@ -63,7 +74,11 @@ export default {
         : findValue(data, ['screen', 'text', 'output', 'content']) ?? result.stdout;
     return String(screen).split(/\r?\n/).slice(-lines).join('\n');
   },
-  close(handle) { call(['close', '--terminal', handle]); },
+  close(handle, { layout } = {}) {
+    const args = ['close', '--terminal', handle];
+    if (layout === 'tab') args.push('--tab');
+    call(args);
+  },
   alive(handle) {
     const result = run('orca', ['terminal', 'list', '--json']);
     if (result.code !== 0) return false;

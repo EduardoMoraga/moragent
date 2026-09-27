@@ -5,7 +5,7 @@ import { dirs, requireRoot } from '../core/paths.js';
 import { loadConfig, saveConfig } from '../core/config.js';
 import { ensureDir, exists, readJSON, readText, writeText, copyDir, listFiles, nowISO } from '../core/fsx.js';
 import { MoragentError } from '../core/errors.js';
-import { t } from '../core/i18n.js';
+import { t, setLang } from '../core/i18n.js';
 import { list as listMemory } from '../memory/index.js';
 
 export function getObsidianConfigPaths() {
@@ -165,7 +165,7 @@ export async function link({ root, vault, folder = 'Moragent', mode = 'link' } =
     }
     copyDir(moraDir, destDir);
   } else {
-    throw new MoragentError('BAD_MODE', `Invalid mode: ${mode}`, 'link | copy');
+    throw new MoragentError('BAD_MODE', t(`Modo inválido: ${mode}`, `Invalid mode: ${mode}`), 'link | copy');
   }
 
   cfg.brain = {
@@ -188,20 +188,53 @@ export async function link({ root, vault, folder = 'Moragent', mode = 'link' } =
   };
 }
 
+const PLACEHOLDER_GOAL = /^(?:Describe aquí|Describe the project goal)/i;
+
+export function resolveGoal(root, cfg) {
+  if (cfg?.lang) {
+    setLang(cfg.lang);
+  }
+
+  if (cfg?.goal && String(cfg.goal).trim()) {
+    return String(cfg.goal).trim();
+  }
+
+  const projectMdPath = path.join(dirs(root).canonical, 'project.md');
+  if (exists(projectMdPath)) {
+    const raw = readText(projectMdPath, '');
+    const body = raw.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+    const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const firstPara = paragraphs.find((p) => !/^(?:Creado con|Created with)\s+`mora init`/i.test(p)) || '';
+    if (firstPara && !PLACEHOLDER_GOAL.test(firstPara)) {
+      return firstPara;
+    }
+  }
+
+  return t(
+    'Sin objetivo — edita .moragent/memory/canonical/project.md',
+    'No goal yet — edit .moragent/memory/canonical/project.md'
+  );
+}
+
 export async function buildHome(root) {
   const r = root || requireRoot();
   const cfg = loadConfig(r);
   const d = dirs(r);
 
+  const lang = cfg.lang || 'en';
+  setLang(lang);
+
+  const goalText = resolveGoal(r, cfg);
+
   const lines = [
-    `# ${cfg.project || path.basename(r)} — Map of Content`,
+    t(`# ${cfg.project || path.basename(r)} — Mapa de contenido`, `# ${cfg.project || path.basename(r)} — Map of Content`),
     '',
-    `> Moragent Obsidian Second Brain — Generated ${nowISO()}`,
+    t(`> Moragent Obsidian Second Brain — Generado ${nowISO()}`, `> Moragent Obsidian Second Brain — Generated ${nowISO()}`),
     '',
-    '## Project Goal',
-    cfg.mission || cfg.description || `Autonomous agentic development workspace for ${cfg.project || 'project'}.`,
+    t('## Objetivo del proyecto', '## Project Goal'),
+    goalText,
     '',
-    '## Crew',
+    t('## Equipo', '## Crew'),
   ];
 
   const crew = cfg.crew || {};
@@ -214,7 +247,7 @@ export async function buildHome(root) {
   lines.push('');
 
   // Specs section with phase if available
-  lines.push('## Specs');
+  lines.push(t('## Especificaciones', '## Specs'));
   let specStateFn = null;
   try {
     const specMod = await import('../spec/index.js');
@@ -233,14 +266,14 @@ export async function buildHome(root) {
   }
 
   if (specDirs.length === 0) {
-    lines.push('_No specs defined yet._');
+    lines.push(t('_Aún no hay especificaciones definidas._', '_No specs defined yet._'));
   } else {
     for (const slug of specDirs) {
       let phaseInfo = '';
       if (specStateFn) {
         try {
           const st = specStateFn(r, slug);
-          if (st?.phase) phaseInfo = ` (phase: \`${st.phase}\`)`;
+          if (st?.phase) phaseInfo = t(` (fase: \`${st.phase}\`)`, ` (phase: \`${st.phase}\`)`);
         } catch { /* ignore */ }
       }
       lines.push(`- [[specs/${slug}/spec.md|${slug}]]${phaseInfo}`);
@@ -249,7 +282,7 @@ export async function buildHome(root) {
   lines.push('');
 
   // Tasks by status
-  lines.push('## Tasks');
+  lines.push(t('## Tareas', '## Tasks'));
   const tasksByStatus = {};
   if (exists(d.tasks)) {
     const taskFiles = listFiles(d.tasks, { ext: '.json' });
@@ -270,22 +303,24 @@ export async function buildHome(root) {
     if (list && list.length > 0) {
       totalTasks += list.length;
       lines.push(`### ${st.toUpperCase()}`);
-      for (const t of list) {
-        lines.push(`- [[tasks/${t.id}.md|${t.id}]]: ${t.title || 'Untitled'} (@${t.role || 'crew'})`);
+      for (const tItem of list) {
+        const taskTitle = tItem.title || t('Sin título', 'Untitled');
+        const taskRole = tItem.role || t('equipo', 'crew');
+        lines.push(`- [[tasks/${tItem.id}.md|${tItem.id}]]: ${taskTitle} (@${taskRole})`);
       }
       lines.push('');
     }
   }
   if (totalTasks === 0) {
-    lines.push('_No tasks registered yet._');
+    lines.push(t('_Aún no hay tareas registradas._', '_No tasks registered yet._'));
     lines.push('');
   }
 
   // Canonical Decisions
-  lines.push('## Canonical Decisions');
-  const canonicalNotes = listMemory({ root: r, tier: 'canonical' });
+  lines.push(t('## Decisiones canónicas', '## Canonical Decisions'));
+  const canonicalNotes = listMemory({ root: r, tier: 'canonical' }).filter((n) => n.id !== 'project');
   if (canonicalNotes.length === 0) {
-    lines.push('_No canonical decisions recorded yet._');
+    lines.push(t('_Aún no hay decisiones canónicas registradas._', '_No canonical decisions recorded yet._'));
   } else {
     for (const note of canonicalNotes) {
       lines.push(`- [[memory/canonical/${note.id}.md|${note.title}]] (${note.kind})`);
@@ -294,13 +329,14 @@ export async function buildHome(root) {
   lines.push('');
 
   // Recent Episodes
-  lines.push('## Recent Episodes');
+  lines.push(t('## Episodios recientes', '## Recent Episodes'));
   const episodicNotes = listMemory({ root: r, tier: 'episodic', limit: 10 });
   if (episodicNotes.length === 0) {
-    lines.push('_No recent episodes._');
+    lines.push(t('_Sin episodios recientes._', '_No recent episodes._'));
   } else {
     for (const note of episodicNotes) {
-      lines.push(`- [[memory/episodic/${note.id}.md|${note.title}]] (@${note.by || 'crew'})`);
+      const author = note.by || t('equipo', 'crew');
+      lines.push(`- [[memory/episodic/${note.id}.md|${note.title}]] (@${author})`);
     }
   }
   lines.push('');
