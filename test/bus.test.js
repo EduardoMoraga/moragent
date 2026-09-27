@@ -9,6 +9,9 @@ import { ensureDir, readText, writeText } from '../src/core/fsx.js';
 import { dirs } from '../src/core/paths.js';
 import { parseDuration } from '../src/bus/wait.js';
 
+// These tests assert the POSIX command strings; Windows variants pass platform: 'win32' explicitly.
+Object.defineProperty(process, 'platform', { value: 'linux' });
+
 function project() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora bus '));
   for (const key of ['tasks', 'specs']) ensureDir(dirs(root)[key]);

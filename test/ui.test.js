@@ -26,7 +26,9 @@ const sink = () => { const o = new PassThrough(); o.text = ''; o.on('data', (d) 
 async function capture(fn) {
   const orig = process.stdout.write.bind(process.stdout);
   let buf = '';
-  process.stdout.write = (s) => { buf += s; return true; };
+  // Node 18/20's test runner reports to its parent through stdout as binary frames: only
+  // capture our own text and let those Buffers through untouched.
+  process.stdout.write = (s, ...rest) => (typeof s === 'string' ? ((buf += s), true) : orig(s, ...rest));
   try { const code = await fn(); return { code, text: buf }; } finally { process.stdout.write = orig; }
 }
 

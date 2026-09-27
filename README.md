@@ -179,6 +179,8 @@ Capture is deterministic (no LLM): it keeps the first request, the last answer, 
 
 ## Tested with
 
+> **Platforms.** Verified live on macOS with Orca. Linux and Windows run the full test suite in CI (Node 18/20/22). On Windows, agent panes are **experimental** (untested on a real machine yet); headless mode (`--mux headless`) is the safe path there. Reports welcome.
+
 End-to-end on September 27, 2026 in Orca: each CLI as a worker through `mora up` → `mora dispatch` → `mora done`, in `auto` mode.
 
 | CLI | Version | `auto` flags | Result |

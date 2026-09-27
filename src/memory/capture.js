@@ -64,7 +64,8 @@ export function classifyFilePath(filePath, rootDir) {
     return { inside: false, path: filePath };
   }
 
-  return { inside: true, relPath: rel.replace(/^\.\//, '') };
+  // Notes and Obsidian links always use forward slashes, whatever the OS separator is.
+  return { inside: true, relPath: rel.split(path.sep).join('/').replace(/^\.\//, '') };
 }
 
 /**

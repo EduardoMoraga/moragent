@@ -307,7 +307,7 @@ test('CLI: memory command add, list, recall, show, promote, gc with --json', asy
   // Capture stdout
   let outLogs = [];
   const origOut = process.stdout.write;
-  process.stdout.write = (chunk) => { outLogs.push(chunk); return true; };
+  process.stdout.write = (chunk, ...rest) => (typeof chunk === 'string' ? (outLogs.push(chunk), true) : origOut.call(process.stdout, chunk, ...rest));
 
   try {
     // 1. Add
@@ -350,7 +350,7 @@ test('CLI: context command prints context pack with --json', async () => {
 
   let outLogs = [];
   const origOut = process.stdout.write;
-  process.stdout.write = (chunk) => { outLogs.push(chunk); return true; };
+  process.stdout.write = (chunk, ...rest) => (typeof chunk === 'string' ? (outLogs.push(chunk), true) : origOut.call(process.stdout, chunk, ...rest));
 
   try {
     await contextCmd.run({ _: ['helper'], flags: { budget: '2000' } }, ctx);
@@ -617,7 +617,7 @@ test('CLI: memory capture handles claude and codex payloads, logging on errors w
 
   let outLogs = [];
   const origOut = process.stdout.write;
-  process.stdout.write = (chunk) => { outLogs.push(chunk); return true; };
+  process.stdout.write = (chunk, ...rest) => (typeof chunk === 'string' ? (outLogs.push(chunk), true) : origOut.call(process.stdout, chunk, ...rest));
 
   try {
     const code = await memoryCmd.run({

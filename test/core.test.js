@@ -122,7 +122,7 @@ test('windows quoting keeps spaced paths and metacharacters as one literal argum
   assert.equal(shq('Bash(npm test:*)', 'win32'), '"Bash(npm test:*)"');
   assert.equal(winQuote('obsidian://open?vault=V&file=F'), '"obsidian://open?vault=V&file=F"');
   assert.equal(winQuote('say "hi"'), '"say ""hi"""');
-  assert.equal(shq("it's"), "'it'\\''s'", 'POSIX quoting unchanged');
+  assert.equal(shq("it's", 'linux'), "'it'\\''s'", 'POSIX quoting unchanged');
   assert.equal(which(process.execPath), process.execPath, 'absolute paths resolve to themselves');
   assert.equal(which(''), null);
 });

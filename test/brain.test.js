@@ -171,7 +171,7 @@ test('CLI: brain command link, status, sync, and open with setExec stub', async 
   const ctx = { root, json: true, lang: 'en' };
   let outLogs = [];
   const origOut = process.stdout.write;
-  process.stdout.write = (chunk) => { outLogs.push(chunk); return true; };
+  process.stdout.write = (chunk, ...rest) => (typeof chunk === 'string' ? (outLogs.push(chunk), true) : origOut.call(process.stdout, chunk, ...rest));
 
   let execCalls = [];
   setExec((cmd, args) => {
@@ -205,7 +205,8 @@ test('CLI: brain command link, status, sync, and open with setExec stub', async 
     assert.equal(openRes.ok, true);
     assert.match(openRes.uri, /^obsidian:\/\/open\?path=/);
     assert.equal(execCalls.length, 1);
-    assert.match(execCalls[0].args[0], /^obsidian:\/\/open\?path=/);
+    // Windows opens through cmd.exe /c start "" <uri>; the URI is always the last argument.
+    assert.match(execCalls[0].args.at(-1), /^obsidian:\/\/open\?path=/);
   } finally {
     process.stdout.write = origOut;
     resetExec();
@@ -229,7 +230,7 @@ test('CLI: brain status respects --lang en printing English counters and labels'
   const ctxEn = { root, json: false, lang: 'en' };
   let logsEn = [];
   const origOut = process.stdout.write;
-  process.stdout.write = (chunk) => { logsEn.push(String(chunk)); return true; };
+  process.stdout.write = (chunk, ...rest) => (typeof chunk === 'string' ? (logsEn.push(chunk), true) : origOut.call(process.stdout, chunk, ...rest));
 
   try {
     await brainCmd.run({ _: ['status'], flags: { lang: 'en' } }, ctxEn);
@@ -249,7 +250,7 @@ test('CLI: brain status respects --lang en printing English counters and labels'
   // Test in Spanish
   const ctxEs = { root, json: false, lang: 'es' };
   let logsEs = [];
-  process.stdout.write = (chunk) => { logsEs.push(String(chunk)); return true; };
+  process.stdout.write = (chunk, ...rest) => (typeof chunk === 'string' ? (logsEs.push(chunk), true) : origOut.call(process.stdout, chunk, ...rest));
 
   try {
     await brainCmd.run({ _: ['status'], flags: { lang: 'es' } }, ctxEs);

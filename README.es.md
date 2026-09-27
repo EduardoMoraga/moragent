@@ -179,6 +179,8 @@ La captura es determinista (sin LLM): guarda el primer pedido, la última respue
 
 ## Probado con
 
+> **Plataformas.** Verificado en vivo en macOS con Orca. Linux y Windows corren toda la suite de tests en CI (Node 18/20/22). En Windows los paneles de agentes son **experimentales** (aún sin probar en una máquina real); ahí el camino seguro es el modo headless (`--mux headless`). Se agradecen reportes.
+
 De punta a punta el 27 de septiembre de 2026 en Orca: cada CLI como agente con `mora up` → `mora dispatch` → `mora done`, en modo `auto`.
 
 | CLI | Versión | Flags de `auto` | Resultado |

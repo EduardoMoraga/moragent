@@ -17,6 +17,9 @@ import resendCommand from '../src/commands/resend.js';
 import upCommand from '../src/commands/up.js';
 import { loadPanes, savePanes } from '../src/crew/panes.js';
 
+// These tests assert the POSIX command strings; Windows variants pass platform: 'win32' explicitly.
+Object.defineProperty(process, 'platform', { value: 'linux' });
+
 afterEach(() => resetExec());
 
 test('orca parses nested handles and keeps spaced commands as one argument', () => {
