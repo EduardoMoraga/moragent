@@ -5,8 +5,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { resetExec, setExec } from '../src/core/exec.js';
+import { getLang, setLang } from '../src/core/i18n.js';
 import { autonomyArgsFor } from '../src/crew/adapters.js';
 import { PROVIDERS, getProvider, listProviders } from '../src/providers/index.js';
+import { loginCommand as claudeLogin } from '../src/providers/cli/claude.js';
+import { loginCommand as codexLogin } from '../src/providers/cli/codex.js';
+import { loginCommand as agyLogin } from '../src/providers/cli/agy.js';
+import { loginCommand as piLogin } from '../src/providers/cli/pi.js';
+import { loginCommand as geminiLogin } from '../src/providers/cli/gemini.js';
+import { loginCommand as openCodeLogin } from '../src/providers/cli/opencode.js';
 import { resetSpawn, setSpawn } from '../src/providers/cli/stream.js';
 
 const fixtures = new URL('./fixtures/streams/', import.meta.url);
@@ -131,23 +138,31 @@ test('tool calls and results map to bounded normalized events', async () => {
 
 test('status for an absent CLI is fast, never throws and includes a login/install hint', async () => {
   const originalPath = process.env.PATH;
+  const originalLang = getLang();
   process.env.PATH = '';
   try {
-    const status = await PROVIDERS.gemini.status();
-    assert.equal(status.ready, false);
-    assert.match(status.detail, /gemini/i);
-    assert.ok(status.loginHint);
+    setLang('es');
+    const es = await PROVIDERS.gemini.status();
+    assert.equal(es.ready, false);
+    assert.equal(es.detail, 'gemini no está instalado.');
+    assert.equal(es.loginHint, 'npm install -g @google/gemini-cli');
+    setLang('en');
+    const en = await PROVIDERS.gemini.status();
+    assert.equal(en.detail, 'gemini is not installed.');
+    assert.equal(en.loginHint, 'npm install -g @google/gemini-cli');
   } finally {
+    setLang(originalLang);
     process.env.PATH = originalPath;
   }
 });
 
-test('status uses the verified login commands with a three-second timeout', async () => {
+test('status is bilingual and uses verified login commands with a three-second timeout', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-provider-status-'));
   const originalPath = process.env.PATH;
+  const originalLang = getLang();
   const calls = [];
   try {
-    for (const id of ['claude', 'codex', 'agy', 'pi']) {
+    for (const id of ['claude', 'codex', 'agy', 'pi', 'gemini', 'opencode']) {
       const bin = path.join(root, id);
       fs.writeFileSync(bin, '#!/bin/sh\n');
       fs.chmodSync(bin, 0o755);
@@ -160,16 +175,60 @@ test('status uses the verified login commands with a three-second timeout', asyn
       if (command === 'pi') return { code: 0, stdout: '{"status":"ready"}', stderr: '' };
       return { code: 0, stdout: '', stderr: '' };
     });
-    for (const id of ['claude', 'codex', 'agy', 'pi']) {
-      assert.equal((await PROVIDERS[id].status()).ready, true);
+    const hints = {
+      claude: 'claude auth login',
+      codex: 'codex login',
+      agy: 'agy',
+      pi: 'pi',
+      gemini: 'gemini',
+      opencode: 'opencode auth login',
+    };
+    setLang('es');
+    for (const id of Object.keys(hints)) {
+      const status = await PROVIDERS[id].status();
+      assert.equal(status.ready, true);
+      assert.match(status.detail, /está instalado/);
+      assert.equal(status.loginHint, hints[id]);
+    }
+    setLang('en');
+    for (const id of Object.keys(hints)) {
+      const status = await PROVIDERS[id].status();
+      assert.equal(status.ready, true);
+      assert.match(status.detail, /is installed/);
+      assert.equal(status.loginHint, hints[id]);
     }
     assert.deepEqual(calls.find((call) => call.command === 'claude').args, ['auth', 'status']);
     assert.deepEqual(calls.find((call) => call.command === 'codex').args, ['login', 'status']);
     assert.deepEqual(calls.find((call) => call.command === 'pi').args, ['auth', 'check', '--provider', 'openai-codex', '--json', '--no-refresh']);
     assert.ok(calls.every((call) => call.options.timeoutMs === 3000));
   } finally {
+    setLang(originalLang);
     process.env.PATH = originalPath;
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('every subscription provider exports an executable login argv', () => {
+  const expected = {
+    claude: ['claude', 'auth', 'login'],
+    codex: ['codex', 'login'],
+    agy: ['agy'],
+    pi: ['pi'],
+    gemini: ['gemini'],
+    opencode: ['opencode', 'auth', 'login'],
+  };
+  const named = {
+    claude: claudeLogin,
+    codex: codexLogin,
+    agy: agyLogin,
+    pi: piLogin,
+    gemini: geminiLogin,
+    opencode: openCodeLogin,
+  };
+  for (const [id, argv] of Object.entries(expected)) {
+    assert.deepEqual(named[id], argv);
+    assert.equal(PROVIDERS[id].loginCommand, named[id]);
+    assert.ok(argv.every((part) => typeof part === 'string' && part.length));
   }
 });
 

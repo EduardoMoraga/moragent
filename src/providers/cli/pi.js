@@ -51,13 +51,18 @@ const status = cliStatus({
   args: ['auth', 'check', '--provider', 'openai-codex', '--json', '--no-refresh'],
   evaluate: (result) => result.code === 0 && jsonOutput(result).status === 'ready',
   installHint: 'npm install -g @mariozechner/pi-coding-agent',
-  loginHint: 'pi /login',
+  loginHint: 'pi',
 });
+
+// Pi has no shell-level auth login command. Its documented `pi` command opens the TUI,
+// where /login is available; passing `/login` as argv would send it as a model prompt.
+export const loginCommand = ['pi'];
 
 export const pi = {
   id: 'pi',
   label: 'Pi',
   kind: 'subscription',
+  loginCommand,
   status,
   async run(options) {
     const args = [
@@ -72,4 +77,3 @@ export const pi = {
 };
 
 export default pi;
-

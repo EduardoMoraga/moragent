@@ -5,14 +5,14 @@
 █ ▀ █ █▄█ █▀▄ █▀█ █▄█ ██▄ █ ▀█  █
 ```
 
-**One crew of AI coding agents — Claude Code, Codex, Antigravity, Pi — working together in real terminal panes, with shared tasks, layered memory and an Obsidian second brain.**
+**One terminal app. One executive orchestrator. Subagents from Claude, Codex, Antigravity, Pi or any API model — working inside it, with layered memory.**
 
 [![version](https://img.shields.io/github/package-json/v/EduardoMoraga/moragent?color=8b5cf6&label=version)](https://github.com/EduardoMoraga/moragent)
 [![license](https://img.shields.io/badge/license-MIT-8b5cf6)](LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A518-8b5cf6)](https://nodejs.org)
 [![stars](https://img.shields.io/github/stars/EduardoMoraga/moragent?style=flat&color=8b5cf6)](https://github.com/EduardoMoraga/moragent/stargazers)
 
-[Español](README.es.md) · [Website](https://eduardomoraga.github.io/moragent/) · [Architecture](docs/ARCHITECTURE.md)
+[Español](README.es.md) · [Website](https://eduardomoraga.github.io/moragent/) · [Engine Contract](docs/ENGINE.md) · [Architecture](docs/ARCHITECTURE.md)
 
 </div>
 
@@ -32,217 +32,210 @@ irm https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.ps1 
 Then, inside any repo:
 
 ```sh
-mora
+moragent
 ```
 
-No project yet → a short wizard (five questions, Enter accepts the default). Project already there → a dashboard with the next step to take. Node ≥ 18, zero npm dependencies.
+Node ≥ 18, zero npm dependencies. If the folder has no `.moragent/` yet, the app runs project initialization inline right inside the terminal.
 
-<p align="center"><img src="docs/assets/demo.gif" alt="Illustration: mora up opening three agent panes next to the lead" width="820"><br><sub>Illustration — the real recording is generated with <code>vhs docs/demo.tape</code>.</sub></p>
+---
+
+## How it works
+
+```
+$ moragent
+┌─ MORAGENT · my-app ─────────────────────────────┬─ Equipo ───────────────┐
+│ ◆ Hola. Conectado: Claude (suscripción), Codex  │ ◆ Orquestador  listo   │
+│   ¿Qué construimos?                             │                        │
+│ tú › API de tareas con tests                    ├─ Memoria ──────────────┤
+│ ◆ Plan (M · 2 subagentes) …                     │ canónica 3 · episod. 9 │
+│ ◆ backend (codex) terminó T-0001 ✓              │ spec: tareas → apply   │
+├─────────────────────────────────────────────────┴────────────────────────┤
+│ › _                              /login /plan /equipo /memoria /abrir /help│
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Launch `moragent`** in your project terminal. You land directly inside a full-screen, native harness.
+2. **Type `/login`** to see detected subscription CLIs (already logged in or hints to log in) and manage API keys or local Ollama.
+3. **Talk to the executive orchestrator** in plain language. It explores your repo, scopes features, and derives a concrete plan.
+4. **Subagents run inside the app**, streamed directly into the session. You track progress in real time in the sidebar. If you want to interact directly with any agent in its own terminal pane, type `/open <role|id>` (e.g. `/open backend`) to pop it out into Orca, herdr, or tmux.
+
+---
+
+## Log in with what you already have
+
+MORAGENT has **no account and no servers**. It never acts as a proxy: every engine connects directly from your machine using your own vendor subscription or API key.
+
+| Engine ID | Provider | Engine Type | Status & Verification |
+|---|---|---|---|
+| `claude` | Anthropic Claude Code | Subscription CLI | ✓ Verified live (Sep 27, 2026) |
+| `codex` | OpenAI Codex CLI | Subscription CLI | ✓ Verified live (Sep 27, 2026) |
+| `agy` | Google Antigravity CLI | Subscription CLI | ✓ Verified live (Sep 27, 2026) |
+| `pi` | Mario Zechner's Pi | Subscription CLI | ✓ Verified live (Sep 27, 2026) |
+| `opencode` | OpenCode AI | Subscription CLI | Supported via adapter |
+| `gemini` | Google Gemini CLI | Subscription CLI | Best effort from `--help` (unverified) |
+| `anthropic` | Anthropic (Claude API) | Native API loop | Messages API with tool use (`claude-sonnet-5`) |
+| `openai` | OpenAI (GPT API) | Native API loop | Chat completions with tool calls (`gpt-4o`) |
+| `openrouter` | OpenRouter | Native API loop | OpenAI-compatible endpoint (`anthropic/claude-sonnet-5`) |
+| `google` | Google Gemini API | Native API loop | `generateContent` with function declarations (`gemini-2.0-flash`) |
+
+<sub>Default models can be changed per provider with `MORAGENT_<PROVIDER>_MODEL` (e.g. `MORAGENT_OPENAI_MODEL`). The OpenAI and Google defaults were not verified live.</sub>
+| `ollama` | Ollama (Local) | Native API loop | ✓ Verified live with `qwen3.5:9b` writing and reading files |
+
+API keys are stored locally in `~/.moragent/credentials.json` with strict POSIX permissions (`0600`), and standard environment variables take precedence (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OLLAMA_HOST`).
+
+The native API loop provides built-in tools (`read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `bash`), all strictly confined to the project root with output limits (≤ 20 KB) and execution timeouts (120 s).
+
+---
+
+## In-App Commands
+
+Type these slash commands inside `moragent`:
+
+- `/help`: show available commands
+- `/login`: connect subscriptions or configure API keys
+- `/crew` (or `/equipo`): view the crew · `/crew <role> <engine>` to reassign roles
+- `/orchestrator <engine>` (or `/orquestador <m>`): pick the orchestrator engine
+- `/memory [text]` (or `/memoria [texto]`): show memory summary or search notes
+- `/plan <text>`: ask the orchestrator for an explicit plan
+- `/open <role|id>` (or `/abrir <rol|id>`): take a subagent out into an external terminal pane
+- `/cancel`: cancel running work
+- `/exit` (or `/salir`): quit the app (or press Ctrl+C twice)
+
+---
 
 ## Why MORAGENT
 
-Running several coding agents at once is easy. Getting them to **share work, remember decisions and not step on each other** is the hard part. MORAGENT is a thin executive layer on top of the tools you already use:
+Running one AI coding agent in a single chat is straightforward. Running an entire crew that **shares work, preserves context, respects architectural decisions, and avoids stepping on each other** requires an orchestrator:
 
-| | MORAGENT | [herdr](https://herdr.dev) | gentle-ai | hello-sdd | tmux by hand |
+| Feature | MORAGENT v5 | [herdr](https://herdr.dev) | gentle-ai | hello-sdd | Plain tmux |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Agents in real panes | ✓ (Orca · herdr · tmux · headless) | ✓ | — | — | ✓ |
-| Mix vendors in one crew | ✓ | ✓ | ✓ | — | ✓ manual |
-| Task bus between agents | ✓ `dispatch` / `done` / `wait` | ~ send text to panes | — | — | — |
+| Full native terminal harness (TUI) | ✓ | — | — | — | — |
+| Single executive orchestrator | ✓ | — | — | — | — |
+| Subagents run inside the app | ✓ | — | — | — | — |
+| Optional pop-out panes on demand | ✓ (Orca · herdr · tmux) | ✓ | — | — | ✓ manual |
+| Mix subscription CLIs & raw API models | ✓ | ✓ | ✓ | — | ✓ manual |
+| Task bus between agents | ✓ `dispatch` / `done` / `wait` | ~ manual text | — | — | — |
 | Layered memory | ✓ canonical · episodic · transient · skills | — | ~¹ | — | — |
-| Spec-driven phases | ✓ 8 phases, state derived from files | — | ✓ | ✓ | — |
-| Obsidian second brain | ✓ `brain link` | — | — | — | — |
-| One-line install | ✓ | ✓ | ✓ | ✓ | — |
+| Spec-driven phases (SDD) | ✓ 8 phases derived from disk files | — | ✓ | ✓ | — |
+| Obsidian second brain integration | ✓ `mora brain link` | — | — | — | — |
+| One-line install, zero npm deps | ✓ | ✓ | ✓ | ✓ | — |
 
-<sub>¹ gentle-ai ships persistent memory through Engram, a single store of observations with full-text search — durable, but not split into layers.<br>Comparison based on each project's public docs as of September 2026 — open an issue if something is wrong. MORAGENT does not replace herdr, Orca or tmux: it **drives** them.</sub>
+<sub>¹ gentle-ai ships persistent memory through Engram, a single store of observations with full-text search — durable, but not split into architectural layers.<br>Comparison based on public docs as of September 2026. MORAGENT does not replace herdr, Orca or tmux: it orchestrates agents natively and can drive multiplexers when you want external panes.</sub>
 
-## 60-second tour
+---
 
-```sh
-cd my-app
-mora init --preset trio --goal "Online coffee shop"   # or just `mora` for the wizard
-mora doctor                                           # Node, CLIs, multiplexers, Obsidian, project
-mora plan "Stripe checkout, admin dashboard and email receipts"
-#   prints size (S/M/L/XL), recommended preset and roles, and creates the first spec
-mora spec status                                      # every spec with its phase and slug
-mora up                                               # one pane per role, next to yours
-mora dispatch backend "Orders API with Stripe webhooks" --spec <slug>
-mora dispatch frontend "Checkout screen" --spec <slug>
-mora wait T-0001 T-0002                               # blocks until done / blocked / failed
-mora board                                            # kanban of the task bus
-mora memory add "Orders use UUIDv7" --tier canonical --kind decision --body "…"
-mora brain link                                       # .moragent/ shows up in your Obsidian vault
-```
+## The Engine Room: Memory, Specs & Second Brain
 
-Every read command takes `--json`. Every command works without a TTY, so the lead agent itself can run all of this. Add `--dry-run` to `up` or `dispatch` to see what would happen without opening panes or sending anything.
+Everything from MORAGENT v4 remains the battle-tested foundation under the hood:
 
-## How it flows
-
-```mermaid
-flowchart LR
-  you([You]) -->|goal| lead[Lead agent<br/>your terminal]
-  lead -->|mora plan · spec| spec[(.moragent/specs)]
-  lead -->|mora dispatch| bus[(Task bus<br/>.moragent/tasks)]
-  bus -->|"Read and run T-0001.md"| p1[backend pane<br/>Codex]
-  bus --> p2[frontend pane<br/>Claude Code]
-  bus --> p3[helper pane<br/>Antigravity]
-  p1 & p2 & p3 -->|mora done / block| bus
-  bus -->|results| mem[(Memory<br/>canonical · episodic · transient)]
-  mem -->|mora context| p1 & p2 & p3
-  mem --> obs[[Obsidian vault]]
-  lead -->|mora wait · board| bus
-```
-
-1. The **lead** (your current terminal) sizes the work and writes a spec.
-2. `mora dispatch` writes a task **envelope** (`.moragent/tasks/T-0001.md`: mission, task, spec excerpt, relevant memory, acceptance criteria, exit protocol) and types one line into the worker's pane: *Read and run .moragent/tasks/T-0001.md*.
-3. The worker finishes with `mora done T-0001 --summary "…"` or `mora block T-0001 --reason "…"`. The result becomes episodic memory.
-4. The lead `mora wait`s, reviews, integrates, and promotes durable decisions to canonical memory.
-5. Everything is markdown in `.moragent/`, which doubles as an Obsidian folder.
-
-## Concepts
-
-**Crew.** Roles with a mission and a CLI each. Presets: `solo` (lead), `duo` (+backend), `trio` (+frontend), `squad` (+helper, +dev). Change who does what with `mora crew set <role> <cli>`.
-
-**Bus.** Tasks are JSON files with a status: `queued → sent → running → done | failed | blocked`. No server, no daemon — any agent from any vendor can read and write them. If a prompt got lost (for example, typed into a dialog), `mora resend <id>` sends the envelope again to the same pane.
-
-**Memory in three layers, plus procedures.**
+### Layered Memory
 
 | Layer | Folder | What goes there | Lifetime |
 |---|---|---|---|
-| Canonical | `memory/canonical/` | decisions, conventions, architecture | durable, git-tracked |
-| Episodic | `memory/episodic/` | task results, sessions, findings | append-only, git-tracked |
-| Transient | `memory/transient/` | scratch, handoffs | expires (`mora memory gc`) |
+| Canonical | `memory/canonical/` | architectural decisions, conventions | durable, git-tracked |
+| Episodic | `memory/episodic/` | task results, session captures, findings | append-only, git-tracked |
+| Transient | `memory/transient/` | scratchpads, handoffs | expires (`mora memory gc`) |
 | Procedural | `skills/<name>/SKILL.md` | reusable how-tos | synced to every CLI (`mora sync`) |
 
-`mora context <role> --query "…"` compiles a context pack for an agent: canonical notes, recent episodes and the best recall matches, within a character budget.
+`mora context <role> --query "…"` compiles a context pack for an agent: canonical decisions, recent episodes, and semantic recall matches, all within an exact character budget.
 
-**Spec-driven phases.** `explore → propose → spec → design → tasks → apply → verify → archive`. The phase is **derived from the files on disk** (EARS requirements in `spec.md`, `- [ ]` items in `tasks.md`…), so the binary — not the model — decides what comes next: `mora spec next <slug>`.
+### Spec-Driven Phases (SDD)
 
-**Second brain.** `mora brain link` symlinks `.moragent/` into your Obsidian vault (or copies it with `--copy`). Notes use frontmatter and `[[wikilinks]]`, and `Home.md` is a generated map of content, so the graph view shows tasks, specs and decisions connected. With a vault linked, `Home.md` is rebuilt automatically after every `mora done` and `mora block`.
+`explore → propose → spec → design → tasks → apply → verify → archive`
 
-## Supported CLIs and multiplexers
+Phases are **deterministically derived from files on disk** (EARS requirements in `spec.md`, `- [ ]` task items in `tasks.md`), so the software — not LLM hallucination — guarantees workflow progression.
 
-| Agent CLI | Reads | Skills | Install |
-|---|---|---|---|
-| Claude Code (`claude`) | `CLAUDE.md` → `@AGENTS.md` | `.claude/skills` | `npm i -g @anthropic-ai/claude-code` |
-| Codex (`codex`) | `AGENTS.md` | `.agents/skills` | `npm i -g @openai/codex` |
-| Antigravity (`agy`) | `GEMINI.md`, `AGENTS.md` | `.agents/skills` | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` · Windows: `irm https://antigravity.google/cli/install.ps1 \| iex` ([repo](https://github.com/google-antigravity/antigravity-cli)) |
-| Pi (`pi`) | `AGENTS.md` | `.agents/skills`, `.pi/skills` | `npm i -g @mariozechner/pi-coding-agent` |
-| OpenCode (`opencode`) | `AGENTS.md` | `.agents/skills`, `.opencode/skill` | `npm i -g opencode-ai` |
-| Gemini CLI (`gemini`) | `GEMINI.md` | `.agents/skills` | `npm i -g @google/gemini-cli` |
+### Obsidian Second Brain
 
-| Multiplexer | Picked when | Notes |
-|---|---|---|
-| Orca | running inside Orca (`ORCA_TERMINAL_HANDLE`) | splits next to your terminal |
-| herdr | `HERDR_ENV=1` | panes managed by herdr |
-| tmux | inside tmux, or tmux is installed | outside tmux it creates a detached session and tells you how to attach |
-| headless | nothing else available | agents run in the background, logs in `.moragent/runs/` |
+`mora brain link` symlinks `.moragent/` into your Obsidian vault (or copies it with `--copy`). Notes use standard frontmatter and `[[wikilinks]]`. An auto-generated `Home.md` connects specs, tasks, and architectural decisions directly into your visual knowledge graph.
 
-Force one with `mora up --mux tmux` or `mora config set mux tmux`.
+### Plugin for Claude Code and Codex
 
-**Layout.** `layout` is `split` (default) or `tabs`. In Orca, `split` opens each agent next to your terminal; when the split fails or the tab already holds 4 panes, that agent gets its own tab named after its role. `mora config set layout tabs` always uses tabs.
-
-**`mora` inside every pane.** `mora up` writes a small shim to `.moragent/runs/bin` and puts it first on each pane's `PATH`, so workers can run `mora done` even if you installed MORAGENT with `npx` or from a git clone.
-
-`mora sync` keeps one canonical `AGENTS.md` and writes a managed block (between `<!-- moragent:… -->` markers) into each file the crew needs. It never touches your text outside the markers.
-
-## Autonomy and safety
-
-A worker that stops to ask "may I run `mora done`?" in a pane nobody is watching stalls the whole crew. So every role has an autonomy level, set in `crew.<role>.autonomy`:
-
-| Mode | What the agent may do without asking | Flags MORAGENT passes |
-|---|---|---|
-| `auto` **(default)** | edit files in the repo and run `mora …`, `node`, `npm test`, `git status` and `git diff`; other shell commands are decided by Claude's auto-mode classifier (Claude) or stay inside the workspace sandbox (Codex, Antigravity) | Claude: `--permission-mode auto --allowedTools "Bash(mora:*)" "Bash(npm test:*)" "Bash(node:*)" "Bash(git status:*)" "Bash(git diff:*)"` · Codex: `-s workspace-write -a never` · Antigravity: `--sandbox --dangerously-skip-permissions` · Gemini: `--approval-mode auto_edit` |
-| `full` | anything — no prompts, no sandbox | Claude/Antigravity: `--dangerously-skip-permissions` · Codex: `--dangerously-bypass-approvals-and-sandbox` · Gemini: `--yolo` |
-| `ask` | nothing; the CLI's own prompts apply | none |
-
-Pi and OpenCode do not prompt for permissions, so they get no extra flags. Headless runs are never `ask` (nobody could answer): they run at least as `auto`.
-
-**Why `auto` is the default:** it is the smallest set of permissions that lets a worker finish a task and report back on its own. Codex keeps its workspace sandbox, and Claude can only run the commands on the list without asking. Antigravity's `accept-edits` mode still asks before *every* shell command (even `mora done`), so `auto` runs it inside its sandbox without prompts instead: writes outside the workspace are refused.
-
-```sh
-mora config set crew.backend.autonomy full   # one role, persisted in moragent.json
-mora up --yolo                               # every pane opened by this command runs in full
-```
-
-Use `full` / `--yolo` only in a disposable environment (container, VM, throwaway branch) you are fine losing. The first time a CLI opens in a folder it may ask whether you trust it: `mora up` reminds you, and `dispatch` to an Orca pane refuses to send while a trust or update dialog is at the bottom of the screen (see [Troubleshooting](#troubleshooting)).
-
-## Automatic memory
-
-Every finished task already becomes memory through `mora done`, whatever the CLI. On top of that, agent sessions can leave a note on their own:
-
-- **Claude Code** — `mora init` adds a `SessionEnd` hook to the project's `.claude/settings.json` (skip with `--no-hooks`; add it later with `mora sync --hooks`).
-- **Codex** — Codex ignores `notify` in a project-level config (and warns on every launch), so the only place it works is your user config. MORAGENT touches it only when you ask: `mora sync --hooks --global` adds `notify` to `~/.codex/config.toml`, and never if you already have a `notify`. Outside MORAGENT projects the capture is a silent no-op.
-
-The hooks call the same MORAGENT installation you ran (`mora` when it is on your PATH, otherwise its absolute path, so npx and git clones work too). `mora sync --hooks --dry-run` shows what would be written, and existing hooks are never replaced.
-
-Capture is deterministic (no LLM): it keeps the first request, the last answer, the files edited and a few relevant commands, as **one note per session**. It skips trivial sessions and redacts anything that looks like a secret (`sk-…`, `ghp_…`, `AKIA…`, private keys). A capture error never breaks your agent: it is logged to `.moragent/runs/capture.log`.
-
-## Tested with
-
-> **Platforms.** Verified live on macOS with Orca. Linux and Windows run the full test suite in CI (Node 18/20/22). On Windows, agent panes are **experimental** (untested on a real machine yet); headless mode (`--mux headless`) is the safe path there. Reports welcome.
-
-End-to-end on September 27, 2026 in Orca: each CLI as a worker through `mora up` → `mora dispatch` → `mora done`, in `auto` mode.
-
-| CLI | Version | `auto` flags | Result |
-|---|---|---|---|
-| Codex | 0.154 | `-s workspace-write -a never` | ✓ no prompts |
-| Claude Code | 2.1.283 | `--permission-mode auto --allowedTools …` (mora, node, npm test, git status/diff) | ✓ no prompts |
-| Antigravity | 1.2.x | `--sandbox --dangerously-skip-permissions` | ✓ no prompts; the sandbox refused `touch ../outside.txt` |
-| Pi | 0.85 | — (Pi does not ask for permissions) | ✓ — Pi shows its own trust dialog the first time |
-
-OpenCode and Gemini CLI are supported by the adapters but were not part of this run.
-
-## Plugin for Claude Code and Codex
-
-The same repo is a plugin for both, shipping the MORAGENT skills (lead protocol, worker protocol, specs, memory):
+The repository ships plug-and-play skills for Claude Code and Codex:
 
 ```text
 # Claude Code
 /plugin marketplace add EduardoMoraga/moragent
 /plugin install moragent@moragent
-
 ```
 
-For Codex, the repo ships `.codex-plugin/plugin.json`, which points at the same skills in `plugin/skills/`.
+For Codex, `.codex-plugin/plugin.json` exposes the identical protocols from `plugin/skills/`.
 
-The skills call the `mora` CLI (falling back to `npx github:EduardoMoraga/moragent` when it is not installed).
+---
 
-## Troubleshooting
+## For Scripts and Other Agents: `mora` CLI
 
-**A pane shows "Do you trust this folder?"** Claude Code, Codex, Antigravity and Pi ask once per folder. Accept it in that pane; it does not come back.
+For CI/CD pipelines, headless automation, or external agents, the `mora` CLI continues to work:
 
-**`dispatch` fails with `PANE_NOT_READY`.** The bottom of that pane shows a trust or update dialog, which would have swallowed the prompt. Accept the dialog in the pane and run the same `dispatch` again. If the task was already created or its prompt got lost, use `mora resend <id>` (works for `queued` and `sent` tasks).
+```sh
+cd my-app
+mora init --preset trio --goal "Online store"     # initialize a project
+mora doctor                                       # verify system health & installed engines
+mora plan "Checkout flow and admin dashboard"     # size work and generate initial spec
+mora spec status                                  # check spec phases
+mora dispatch backend "Orders API" --spec <slug>  # dispatch a task to the bus
+mora wait T-0001                                  # wait until task is completed
+mora board                                        # terminal kanban board
+mora memory add "Use UUIDv7" --tier canonical     # add an architectural decision
+mora brain link                                   # link with Obsidian vault
+```
 
-**Panes are too narrow.** Orca already moves to a new tab after 4 panes; to give every agent its own tab, run `mora config set layout tabs`, then `mora down` and `mora up` (panes that are already running are kept as they are).
+Every read command accepts `--json`.
 
-**Codex sessions do not appear in memory.** Codex only reads `notify` from `~/.codex/config.toml`. Run `mora sync --hooks --global` (it will not overwrite an existing `notify`). Tasks closed with `mora done` are recorded either way.
+---
 
-**A worker says `mora: command not found`.** Panes opened by `mora up` get `mora` on their `PATH`; panes you opened by hand do not. Reopen the role with `mora up <role>`.
+## Autonomy and Safety
 
-For everything else, `mora doctor` checks Node, each CLI, the multiplexers, Obsidian and the project files, and prints a one-line fix for each problem.
+Every role and engine run operates under an explicit autonomy contract:
 
-## FAQ — coming from a chat window
+| Mode | What the agent may do without asking |
+|---|---|
+| `readonly` | Read repository files (`read_file`, `list_dir`, `grep`). Writes (`write_file`, `edit_file`) and shell execution (`bash`) are strictly refused with a clear message. Ideal for orchestrators. |
+| `auto` **(default)** | Edit files within the repo and run safe verification commands (`mora`, `node`, `npm test`, `git status`, `git diff`). Shell writes outside the workspace are blocked by vendor sandboxes. |
+| `full` | Unrestricted operations without prompts or sandboxes (`--dangerously-skip-permissions` / `--yolo`). Use only in throwaway disposable containers. |
+| `ask` | Never run commands or edits without explicit user confirmation. |
 
-**Do I need to know tmux?** No. Inside Orca or herdr panes open by themselves; with only tmux installed, MORAGENT creates the session and prints the one command to attach. With nothing, agents run headless and you watch the board.
+---
 
-**Is it one AI or several?** Several independent agent CLIs, each in its own pane, each logged in with its own account. MORAGENT gives them a shared to-do list and a shared memory.
+## Tested with
 
-**Does it send my code anywhere?** MORAGENT itself makes no network calls. The agent CLIs you run talk to their own providers, exactly as they do without MORAGENT.
+> **Platforms.** Verified live on macOS (Apple Silicon). Linux and Windows run the full test suite in CI across Node 18, 20, and 22. Windows is **experimental**: the test suite passes there, but neither the terminal app nor external panes have been tried on a real Windows machine yet.
 
-**What does it cost?** MORAGENT is free (MIT). Each agent CLI uses your existing subscription or API key.
+Verified live on September 27, 2026:
+- **Codex 0.154**: headless streaming execution with `-s workspace-write -a never` (no prompts).
+- **Claude Code 2.1.283**: headless streaming execution with `--permission-mode auto` and allowed tools.
+- **Antigravity 1.2.x**: streaming execution with sandboxed permission bypass.
+- **Pi 0.85**: streaming JSON execution and session recovery.
+- **Ollama (local)**: tested live with `qwen3.5:9b`, executing multi-step tool calls (`write_file` + `read_file`) via the native loop.
 
-**I only have Claude Code.** That works: every role can use the same CLI. `mora doctor` tells you what is missing and how to install it.
+---
 
-**Can I undo it?** Everything lives in `.moragent/` plus a marked block in `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`. Delete those and you are back where you started.
+## FAQ — Coming from a chat window
+
+**Do I need tmux or Orca?**  
+No. MORAGENT v5 is a standalone, full-screen terminal app that runs inside any terminal (Terminal.app, iTerm2, Alacritty, Ghostty, Windows Terminal, etc.). Orca, herdr, or tmux are only used if you choose to pop an agent out into a separate terminal pane using `/open`.
+
+**Is it one AI or several?**  
+It is one executive orchestrator coordinating multiple specialized subagents (backend, frontend, helper, dev). Each subagent can use whichever engine or API model best suits its task.
+
+**Does it send my code to MORAGENT servers?**  
+No. MORAGENT has no servers and does not collect telemetry. Your agent CLIs talk directly to their respective providers, and local Ollama runs completely offline.
+
+**What does it cost?**  
+MORAGENT is 100% free and open source (MIT). You only pay your existing vendor subscriptions or API usage.
+
+**Can I run everything with just one tool?**  
+Yes. You can run both the orchestrator and all subagents using a single engine (e.g. Claude Code only, Codex only, or 100% locally with Ollama).
+
+**Can I undo it?**  
+Everything lives cleanly in `.moragent/` plus managed comment blocks in `AGENTS.md` / `CLAUDE.md`. Remove those and your repo is restored to its exact previous state.
+
+---
 
 ## Contributing
 
-Issues and PRs welcome — read [CONTRIBUTING.md](CONTRIBUTING.md) and the contract in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). `npm test` runs the whole suite; tests never launch a real agent or multiplexer.
+Contributions are welcome — please read [CONTRIBUTING.md](CONTRIBUTING.md) and the contracts in [docs/ENGINE.md](docs/ENGINE.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Run `npm test` before submitting changes.
 
 ## License
 
 [MIT](LICENSE) © Eduardo Moraga
-
----
-
-<p align="center">If MORAGENT saves you a few context switches, <a href="https://github.com/EduardoMoraga/moragent">give it a ⭐</a> — it helps other people find it.</p>

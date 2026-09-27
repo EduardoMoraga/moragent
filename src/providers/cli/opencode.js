@@ -38,10 +38,13 @@ const status = cliStatus({
   loginHint: 'opencode auth login',
 });
 
+export const loginCommand = ['opencode', 'auth', 'login'];
+
 export const opencode = {
   id: 'opencode',
   label: 'OpenCode',
   kind: 'subscription',
+  loginCommand,
   status,
   async run(options) {
     const prompt = options.system ? `${options.system}\n\n${options.prompt}` : options.prompt;
@@ -54,4 +57,3 @@ export const opencode = {
 };
 
 export default opencode;
-

@@ -45,10 +45,13 @@ const status = cliStatus({
   loginHint: 'claude auth login',
 });
 
+export const loginCommand = ['claude', 'auth', 'login'];
+
 export const claude = {
   id: 'claude',
   label: 'Claude Code',
   kind: 'subscription',
+  loginCommand,
   status,
   async run(options) {
     const args = [
@@ -65,4 +68,3 @@ export const claude = {
 };
 
 export default claude;
-

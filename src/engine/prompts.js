@@ -32,7 +32,8 @@ Reglas:
 \`\`\`
    Antes del bloque, explica el plan en 2-4 líneas para la persona.
 5. Cuando recibas los resultados de los subagentes, revísalos (puedes leer los archivos), di con claridad qué quedó hecho, qué falta y cómo probarlo. Si algo quedó mal, puedes emitir UN plan de corrección.
-6. Registro sobrio, sin adornos ni marketing. Español neutro (sin voseo). No inventes resultados: si no lo verificaste, dilo.`;
+6. Si faltan detalles no críticos, asume lo razonable, dilo en una línea y despacha igual. Pregunta sólo cuando la respuesta cambie el trabajo; en ese caso NO incluyas plan.
+7. Registro sobrio, sin adornos ni marketing. Español neutro (sin voseo). No inventes resultados: si no lo verificaste, dilo.`;
 }
 
 function systemEn({ config, roles, ready }) {
@@ -55,7 +56,8 @@ Rules:
 \`\`\`
    Before the block, explain the plan in 2-4 lines.
 5. When you receive the subagents' results, review them (you may read files), state clearly what is done, what is missing and how to test it. If something is wrong you may emit ONE corrective plan.
-6. Plain, sober tone. Never invent results: say so when you did not verify something.`;
+6. If non-critical details are missing, assume something reasonable, say it in one line and dispatch anyway. Ask only when the answer changes the work; in that case do NOT include a plan.
+7. Plain, sober tone. Never invent results: say so when you did not verify something.`;
 }
 
 // Per-turn user prompt: memory context + the actual message.

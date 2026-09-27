@@ -38,10 +38,14 @@ const status = cliStatus({
   loginHint: 'gemini',
 });
 
+// Gemini was absent on the probe machine; launching its TUI is the documented auth entrypoint.
+export const loginCommand = ['gemini'];
+
 export const gemini = {
   id: 'gemini',
   label: 'Gemini CLI',
   kind: 'subscription',
+  loginCommand,
   status,
   async run(options) {
     const args = [
@@ -57,4 +61,3 @@ export const gemini = {
 };
 
 export default gemini;
-

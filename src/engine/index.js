@@ -320,6 +320,12 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
           const cred = await optional('../providers/credentials.js');
           cred?.setKey?.(args.id, args.key);
           store.addMessage({ from: 'system', text: t(`Clave guardada para ${args.id}.`, `Key saved for ${args.id}.`) });
+        } else if (args && !Array.isArray(args) && args.id) {
+          // Subscription engine without a session: run its own login in a real pane.
+          const p = provider(args.id);
+          const { shq } = await import('../core/exec.js');
+          const cmd = Array.isArray(p?.loginCommand) ? p.loginCommand.map(shq).join(' ') : store.state.providers.find((x) => x.id === args.id)?.loginHint;
+          if (cmd) await runInPane({ title: `login ${args.id}`, command: cmd, role: args.id });
         }
         await engine.refreshProviders();
         return;
@@ -387,17 +393,23 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     const agents = Object.values(store.state.agents);
     const a = agents.find((x) => x.id === String(ref || '').toUpperCase() || x.role === ref) || agents.filter((x) => x.role === ref).pop();
     if (!a) { store.addMessage({ from: 'system', text: t(`Uso: /abrir <rol|T-XXXX> (${agents.map((x) => x.id).join(', ') || 'sin agentes aún'})`, `Usage: /open <role|T-XXXX> (${agents.map((x) => x.id).join(', ') || 'no agents yet'})`) }); return; }
-    const { detectMux, getMux } = await import('../mux/index.js');
     const { shq } = await import('../core/exec.js');
     const resume = { claude: (s) => `claude --resume ${shq(s)}`, codex: (s) => `codex resume ${shq(s)}`, agy: (s) => `agy --conversation ${shq(s)}`, pi: (s) => `pi --session ${shq(s)}` };
     const log = path.join(dirs(root).runs, `${a.role}-${a.id}.log`);
     const command = a.sessionId && resume[a.provider] ? resume[a.provider](a.sessionId) : `tail -n 200 -f ${shq(log)}`;
+    await runInPane({ title: `${a.role} ${a.id}`, command, role: a.role });
+  }
+
+  // Run a command in a real terminal pane next to this one (Orca/herdr/tmux), or tell the user
+  // exactly what to run when there is no multiplexer.
+  async function runInPane({ title, command, role }) {
+    const { detectMux, getMux } = await import('../mux/index.js');
     let muxName;
-    try { muxName = detectMux(config.mux); } catch { muxName = 'headless'; }
+    try { muxName = detectMux(config?.mux || 'auto'); } catch { muxName = 'headless'; }
     if (muxName === 'headless') { store.addMessage({ from: 'system', text: t(`No hay multiplexor (Orca/herdr/tmux). Ejecuta en otra terminal:\n${command}`, `No multiplexer (Orca/herdr/tmux). Run in another terminal:\n${command}`) }); return; }
     try {
-      const { handle } = getMux(muxName).spawn({ root, role: a.role, title: `${a.role} ${a.id}`, command, cwd: root, layout: config.layout || 'split' });
-      store.addMessage({ from: 'system', text: t(`${a.id} abierto en ${muxName} (${handle}).`, `${a.id} opened in ${muxName} (${handle}).`) });
+      const { handle } = getMux(muxName).spawn({ root: root || cwd, role, title, command, cwd: root || cwd, layout: config?.layout || 'split' });
+      store.addMessage({ from: 'system', text: t(`${title}: abierto en ${muxName} (${handle}).`, `${title}: opened in ${muxName} (${handle}).`) });
     } catch (e) {
       store.addMessage({ from: 'system', text: t(`No se pudo abrir el panel: ${e.message}\n${command}`, `Could not open the pane: ${e.message}\n${command}`) });
     }

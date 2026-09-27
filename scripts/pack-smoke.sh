@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+VERSION="$(node -p "require('./package.json').version")"
 
 rm -f moragent-*.tgz
 TARBALL="$(npm pack --silent | tail -n 1)"
@@ -104,7 +105,7 @@ mora up --dry-run --json > up-dry.json
 node -e "const r=JSON.parse(require('fs').readFileSync('up-dry.json','utf8')); if (JSON.stringify(r).includes('.moragent/runs/bin')) process.exit(1);"
 test ! -e .moragent/runs/bin/mora
 mora up --mux headless backend >/dev/null
-.moragent/runs/bin/mora --version | grep -qx '4.0.0'
+.moragent/runs/bin/mora --version | grep -qx "$VERSION"
 
 cd "$ROOT"
 npx --yes "./$TARBALL" --version >/dev/null

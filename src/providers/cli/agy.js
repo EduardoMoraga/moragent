@@ -40,10 +40,14 @@ const status = cliStatus({
   loginHint: 'agy',
 });
 
+// Agy exposes no auth subcommand; launching its TUI starts the login flow when needed.
+export const loginCommand = ['agy'];
+
 export const agy = {
   id: 'agy',
   label: 'Antigravity',
   kind: 'subscription',
+  loginCommand,
   status,
   async run(options) {
     const prompt = options.system ? `${options.system}\n\n${options.prompt}` : options.prompt;
@@ -59,4 +63,3 @@ export const agy = {
 };
 
 export default agy;
-

@@ -46,10 +46,13 @@ const status = cliStatus({
   loginHint: 'codex login',
 });
 
+export const loginCommand = ['codex', 'login'];
+
 export const codex = {
   id: 'codex',
   label: 'Codex',
   kind: 'subscription',
+  loginCommand,
   status,
   async run(options) {
     const prompt = options.system ? `${options.system}\n\n${options.prompt}` : options.prompt;
@@ -67,4 +70,3 @@ export const codex = {
 };
 
 export default codex;
-
