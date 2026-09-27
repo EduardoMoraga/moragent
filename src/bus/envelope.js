@@ -24,7 +24,8 @@ function specContext(root, slug) {
   return parts.join('\n\n');
 }
 
-export async function buildEnvelope({ root, task, config }) {
+// exitProtocol=false: the native engine closes the task itself from the agent's final answer.
+export async function buildEnvelope({ root, task, config, exitProtocol = true }) {
   const es = config.lang !== 'en';
   const member = config.crew?.[task.role] || {};
   const mission = typeof member.mission === 'object'
@@ -44,15 +45,21 @@ export async function buildEnvelope({ root, task, config }) {
 - ${es ? 'La tarea está implementada y verificada.' : 'The task is implemented and verified.'}
 - ${es ? 'Los cambios se limitan al alcance indicado.' : 'Changes stay within the stated scope.'}
 - ${es ? 'Las pruebas relevantes pasan o los riesgos quedan documentados.' : 'Relevant tests pass or risks are documented.'}`);
-  sections.push(`## ${es ? 'Protocolo de salida' : 'Exit protocol'}
+  if (!exitProtocol) {
+    sections.push(`## ${es ? 'Al terminar' : 'When you finish'}\n\n${es
+      ? 'Termina con un resumen breve: qué cambiaste (archivos) y cómo se verifica. No ejecutes `mora done` ni `mora block`: MORAGENT cierra la tarea con tu respuesta final. Si no puedes completarla, empieza tu respuesta final con `BLOQUEADO:` y explica qué falta.'
+      : 'End with a short summary: what you changed (files) and how to verify it. Do not run `mora done` or `mora block`: MORAGENT closes the task from your final answer. If you cannot complete it, start your final answer with `BLOCKED:` and explain what is missing.'}`);
+  } else {
+    sections.push(`## ${es ? 'Protocolo de salida' : 'Exit protocol'}
 
-${es ? 'Al terminar ejecuta' : 'When finished run'}:
+  ${es ? 'Al terminar ejecuta' : 'When finished run'}:
 
-\`${moraCommand()} done ${task.id} --summary "…" --files a,b\`
+  \`${moraCommand()} done ${task.id} --summary "…" --files a,b\`
 
-${es ? 'Si quedas bloqueado, ejecuta' : 'If blocked, run'}:
+  ${es ? 'Si quedas bloqueado, ejecuta' : 'If blocked, run'}:
 
-\`${moraCommand()} block ${task.id} --reason "…"\``);
+  \`${moraCommand()} block ${task.id} --reason "…"\``);
+  }
   return sections.join('\n\n') + '\n';
 }
 

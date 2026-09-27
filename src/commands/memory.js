@@ -23,6 +23,8 @@ export default {
     const sub = argv._[0] || 'list';
 
     if (sub === 'capture') {
+      // Runs launched by the native engine already become task memory; a session note would duplicate it.
+      if (process.env.MORAGENT_ENGINE) return 0;
       try {
         const root = ctx.root || findRoot();
         if (!root) return 0; // Silent exit if not a MORAGENT project

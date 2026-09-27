@@ -41,7 +41,9 @@ export async function main(tokens) {
   if (argv.flags.version && argv._.length === 0) { out(version()); return 0; }
 
   let name = argv._[0];
-  if (!name) name = argv.flags.help ? 'help' : root ? 'dashboard' : 'init';
+  // No arguments in a real terminal opens the native app; scripts and agents get the dashboard.
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+  if (!name) name = argv.flags.help ? 'help' : interactive ? 'chat' : root ? 'dashboard' : 'init';
   const cmd = await resolveCommand(name);
   if (!cmd) {
     err(t(`Comando desconocido: ${name}`, `Unknown command: ${name}`));

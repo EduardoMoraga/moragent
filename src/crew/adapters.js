@@ -17,11 +17,13 @@ const MODES = {
     auto: ['--permission-mode', 'auto', '--allowedTools', ...CLAUDE_TOOLS],
     full: ['--dangerously-skip-permissions'],
     ask: [],
+    readonly: ['--permission-mode', 'plan'],
   },
   codex: {
     auto: ['-s', 'workspace-write', '-a', 'never'],
     full: ['--dangerously-bypass-approvals-and-sandbox'],
     ask: [],
+    readonly: ['-s', 'read-only'],
   },
   agy: {
     // accept-edits still prompts for every shell command (even `mora done`), which stalls a pane.
@@ -29,11 +31,19 @@ const MODES = {
     auto: ['--sandbox', '--dangerously-skip-permissions'],
     full: ['--dangerously-skip-permissions'],
     ask: [],
+    readonly: ['--mode', 'plan'],
+  },
+  pi: {
+    auto: [],
+    full: [],
+    ask: [],
+    readonly: ['--tools', 'read,grep,find,ls'],
   },
   gemini: {
     auto: ['--approval-mode', 'auto_edit'],
     full: ['--yolo'],
     ask: [],
+    readonly: ['--approval-mode', 'plan'],
   },
 };
 
@@ -44,15 +54,15 @@ const extras = ({ args, model, member } = {}) => ({
 
 export function autonomyFor({ autonomy, member, headless = false } = {}) {
   const wanted = autonomy || member?.autonomy || 'auto';
-  if (!['auto', 'full', 'ask'].includes(wanted)) throw new MoragentError(
+  if (!['auto', 'full', 'ask', 'readonly'].includes(wanted)) throw new MoragentError(
     'BAD_AUTONOMY',
     t(`Autonomía desconocida: ${wanted}`, `Unknown autonomy: ${wanted}`),
-    'auto | full | ask',
+    'auto | full | ask | readonly',
   );
   return headless && wanted === 'ask' ? 'auto' : wanted;
 }
 
-const modeArgs = (id, options, headless = false) => {
+export const autonomyArgsFor = (id, options = {}, headless = false) => {
   const mode = autonomyFor({ ...options, headless });
   if (headless && id === 'codex' && mode === 'auto') return ['-s', 'workspace-write'];
   return MODES[id]?.[mode] || [];
@@ -64,7 +74,7 @@ function adapter(def) {
     installed: () => !!which(def.bin),
     interactive(options = {}) {
       const extra = extras(options);
-      const args = [...modeArgs(def.id, options)];
+      const args = [...autonomyArgsFor(def.id, options)];
       if (extra.model) args.push('--model', extra.model);
       args.push(...extra.args);
       return [def.bin, ...args].map(shq).join(' ');
@@ -73,7 +83,7 @@ function adapter(def) {
       const extra = extras(options);
       const args = [
         ...(def.subcommand ? [def.subcommand] : []),
-        ...modeArgs(def.id, options, true),
+        ...autonomyArgsFor(def.id, options, true),
         ...(extra.model ? ['--model', extra.model] : []),
         ...extra.args,
         ...(def.printFlag ? [def.printFlag] : []),
