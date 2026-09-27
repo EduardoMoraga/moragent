@@ -9,14 +9,17 @@ import { writeEnvelope } from '../bus/envelope.js';
 import { parseDuration, waitForTasks } from '../bus/wait.js';
 import { getAdapter } from '../crew/adapters.js';
 import { loadPanes, savePanes } from '../crew/panes.js';
+import { ensureShim } from '../core/shim.js';
 import { getMux } from '../mux/index.js';
 
-const TRUST_PROMPT = /(?:do you trust|\btrust\b|conf[ií]as)/i;
+// Startup dialogs that swallow a prompt: folder trust (Claude, Codex, agy) and update menus.
+// Only the bottom of the screen matters — an accepted dialog stays visible in the scrollback above.
+const BLOCKING_DIALOG = /(?:do you trust|trust this folder|conf[ií]as en|press enter to continue|enter to confirm)/i;
 
 export function assertPaneReady(mux, pane, role) {
   if (mux.name !== 'orca') return;
-  const screen = mux.read(pane.handle, { lines: 80 });
-  if (!TRUST_PROMPT.test(screen)) return;
+  const bottom = mux.read(pane.handle, { lines: 80 }).split(/\r?\n/).filter((l) => l.trim()).slice(-8).join('\n');
+  if (!BLOCKING_DIALOG.test(bottom)) return;
   throw new MoragentError(
     'PANE_NOT_READY',
     t(`El panel ${role} espera confirmación de confianza.`, `The ${role} pane is waiting for trust confirmation.`),
@@ -40,6 +43,7 @@ export default {
     if (!member) throw new MoragentError('UNKNOWN_ROLE', t(`Rol desconocido: ${role}`, `Unknown role: ${role}`));
     const adapter = getAdapter(member.cli);
     const panes = loadPanes(root);
+    if (!argv.flags['dry-run']) ensureShim(root);
     let pane = panes[role];
     let registeredPane = pane;
     let mux = pane && !argv.flags.headless ? getMux(pane.mux) : null;

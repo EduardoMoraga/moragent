@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { spawnDetached } from '../core/exec.js';
+import { shimFor } from '../core/shim.js';
 import { nowISO, readJSON, readText, writeJSON } from '../core/fsx.js';
 import { dirs, findRoot } from '../core/paths.js';
 import { MoragentError } from '../core/errors.js';
@@ -93,7 +94,7 @@ export default {
       ...spawnDetached(cmd, args, {
         cwd: state.cwd || root,
         logFile,
-        env: { MORAGENT_ROLE: role },
+        env: { MORAGENT_ROLE: role, ...(shimFor(root) ? { PATH: `${shimFor(root)}${path.delimiter}${process.env.PATH || ''}` } : {}) },
       }),
       logFile,
     };

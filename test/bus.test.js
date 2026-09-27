@@ -67,7 +67,7 @@ test('envelope includes mission, spec, acceptance and exit protocol', async () =
   assert.match(text, /Construye la lógica/);
   assert.match(text, /Usar tokens rotatorios/);
   assert.match(text, /Criterios de aceptación/);
-  assert.match(text, /mora done T-0001/);
+  assert.match(text, /mora(\.js)? done T-0001/);
   const file = await writeEnvelope({ root, task, config: cfg });
   assert.equal(readText(file), text);
 });

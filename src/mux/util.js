@@ -1,17 +1,21 @@
 import { shq } from '../core/exec.js';
+import { shimFor } from '../core/shim.js';
 import { MoragentError } from '../core/errors.js';
 import { t } from '../core/i18n.js';
 
 export function paneCommand({ root, role, command, platform = process.platform }) {
   if (!command) return '';
+  const shim = shimFor(root);
   if (platform === 'win32') {
     const cd = root ? `cd /d "${String(root).replace(/"/g, '""')}" && ` : '';
     const env = role ? `set "MORAGENT_ROLE=${String(role).replace(/"/g, '')}" && ` : '';
-    return `${cd}${env}${command}`;
+    const p = shim ? `set "PATH=${shim};%PATH%" && ` : '';
+    return `${cd}${env}${p}${command}`;
   }
   const cd = root ? `cd ${shq(root)} && ` : '';
   const env = role ? `MORAGENT_ROLE=${shq(role)} ` : '';
-  return `${cd}${env}${command}`;
+  const p = shim ? `PATH=${shq(shim)}:"$PATH" ` : '';
+  return `${cd}${env}${p}${command}`;
 }
 
 export function checked(result, label) {

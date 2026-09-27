@@ -389,4 +389,6 @@ export {
   hookConfig,
   redactSecrets,
   parseClaudeTranscript,
+  classifyFilePath,
+  extractLinks,
 } from './capture.js';

@@ -10,16 +10,16 @@ export default {
   name: 'sync',
   group: 'system',
   summary: { es: 'Regenera AGENTS.md/CLAUDE.md/GEMINI.md y copia skills a cada CLI', en: 'Regenerate AGENTS.md/CLAUDE.md/GEMINI.md and copy skills to every CLI' },
-  usage: 'mora sync [--hooks] [--dry-run] [--json]',
+  usage: 'mora sync [--hooks [--global]] [--dry-run] [--json]',
   details: {
-    es: '--hooks instala la captura automática de memoria: hook SessionEnd en .claude/settings.json y notify en .codex/config.toml. Nunca reemplaza hooks ni notify existentes.',
-    en: '--hooks installs automatic memory capture: a SessionEnd hook in .claude/settings.json and notify in .codex/config.toml. Never replaces existing hooks or notify.',
+    es: '--hooks instala la captura automática de memoria: hook SessionEnd en .claude/settings.json (proyecto). Con --global también agrega notify a ~/.codex/config.toml (Codex ignora notify a nivel de proyecto). Nunca reemplaza hooks ni un notify existente.',
+    en: '--hooks installs automatic memory capture: a SessionEnd hook in .claude/settings.json (project). With --global it also adds notify to ~/.codex/config.toml (Codex ignores project-level notify). Never replaces existing hooks or an existing notify.',
   },
   async run(argv, ctx) {
     const root = ctx.root || requireRoot();
     const cfg = ctx.config || loadConfig(root);
     const r = await syncProject(root, cfg, { dryRun: !!argv.flags['dry-run'] });
-    r.hooks = argv.flags.hooks ? installHooks(root, r.clis, { dryRun: !!argv.flags['dry-run'] }) : [];
+    r.hooks = argv.flags.hooks ? installHooks(root, r.clis, { dryRun: !!argv.flags['dry-run'], global: !!argv.flags.global }) : [];
     if (ctx.json) { json({ ok: true, ...r }); return 0; }
     const rel = (p) => path.relative(root, p) || p;
     if (argv.flags['dry-run']) info(t('Simulación — no se escribió nada', 'Dry run — nothing written'));

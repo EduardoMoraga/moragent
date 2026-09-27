@@ -104,10 +104,14 @@ test('hooks merge into existing Claude settings and Codex config without overrid
   assert.equal(s.hooks.Stop[0].hooks[0].command, 'say done');
   assert.match(s.hooks.SessionEnd[0].hooks[0].command, /memory capture --from claude/);
 
-  fs.mkdirSync(path.join(root, '.codex'));
-  fs.writeFileSync(path.join(root, '.codex', 'config.toml'), 'model = "x"\n\n[mcp_servers.a]\ncommand = "a"\n');
-  assert.ok(installCodexHook(root));
-  const toml = fs.readFileSync(path.join(root, '.codex', 'config.toml'), 'utf8');
+  const cfgFile = path.join(root, 'codex-home', 'config.toml');
+  fs.mkdirSync(path.dirname(cfgFile));
+  fs.writeFileSync(cfgFile, 'model = "x"\n\n[mcp_servers.a]\ncommand = "a"\n');
+  assert.ok(installCodexHook(cfgFile));
+  const toml = fs.readFileSync(cfgFile, 'utf8');
   assert.ok(toml.indexOf('notify') < toml.indexOf('[mcp_servers.a]'), 'notify stays top-level');
-  assert.equal(installCodexHook(root), null, 'never overrides an existing notify');
+  assert.equal(installCodexHook(cfgFile), null, 'never overrides an existing notify');
+  const { installHooks } = await import('../src/core/hooks.js');
+  const fresh = tmp();
+  assert.ok(installHooks(fresh, ['codex']).length === 0, 'no global write without global: true');
 });

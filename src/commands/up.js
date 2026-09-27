@@ -6,6 +6,7 @@ import { t } from '../core/i18n.js';
 import { json, out, info, warn } from '../core/log.js';
 import { getAdapter } from '../crew/adapters.js';
 import { loadPanes, savePanes } from '../crew/panes.js';
+import { ensureShim } from '../core/shim.js';
 import { detectMux, getMux } from '../mux/index.js';
 
 export const flagOn = (value) => value !== undefined && value !== false && value !== 'false' && value !== '0';
@@ -39,6 +40,7 @@ export default {
     const muxName = detectMux(typeof argv.flags.mux === 'string' ? argv.flags.mux : cfg.mux);
     const mux = getMux(muxName);
     const panes = loadPanes(root);
+    if (!argv.flags['dry-run']) ensureShim(root);
     const opened = [];
     let anchor;
     for (const role of roles) {
@@ -73,7 +75,7 @@ export default {
         opened.push({ role, cli: member.cli, mux: muxName, handle: null, command, autonomy, status: 'dry-run' });
         continue;
       }
-      const result = mux.spawn({ root, role, title: member.title || role, command, cwd: root, anchor, member, adapter, autonomy });
+      const result = mux.spawn({ root, role, title: member.title || role, command, cwd: root, anchor, member, adapter, autonomy, layout: cfg.layout || 'split' });
       panes[role] = { mux: muxName, handle: result.handle, cli: member.cli, autonomy, startedAt: nowISO() };
       opened.push({ role, cli: member.cli, mux: muxName, handle: result.handle, status: 'opened', session: result.session });
       anchor = result.handle;

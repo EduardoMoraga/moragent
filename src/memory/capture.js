@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { dirs, requireRoot } from '../core/paths.js';
-import { ensureDir, exists, readText, writeText, today, nowISO } from '../core/fsx.js';
+import { ensureDir, exists, readText, writeText, readJSON, today, nowISO } from '../core/fsx.js';
+import { loadConfig } from '../core/config.js';
+import { t, setLang, getLang } from '../core/i18n.js';
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter.js';
 
 // Secret redaction patterns for API keys, tokens, and private keys
@@ -21,6 +23,77 @@ export function redactSecrets(text) {
     clean = clean.replace(pattern, '[REDACTED_SECRET]');
   }
   return clean;
+}
+
+function resolveRealPath(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    const parent = path.dirname(p);
+    if (parent && parent !== p) {
+      const realParent = resolveRealPath(parent);
+      return path.join(realParent, path.basename(p));
+    }
+    return p;
+  }
+}
+
+/**
+ * Classifies a file path as inside or outside project root.
+ * Inside files return { inside: true, relPath: 'path/to/file' }.
+ * Outside files return { inside: false, path: '...' }.
+ */
+export function classifyFilePath(filePath, rootDir) {
+  if (!filePath || typeof filePath !== 'string') return null;
+
+  const normRoot = path.resolve(rootDir);
+  const realRoot = resolveRealPath(normRoot);
+
+  const absPath = path.isAbsolute(filePath)
+    ? path.resolve(filePath)
+    : path.resolve(rootDir, filePath);
+
+  const realAbs = resolveRealPath(absPath);
+
+  let rel = path.relative(realRoot, realAbs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    rel = path.relative(normRoot, absPath);
+  }
+
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    return { inside: false, path: filePath };
+  }
+
+  return { inside: true, relPath: rel.replace(/^\.\//, '') };
+}
+
+/**
+ * Extracts task IDs (T-XXXX) and spec slugs from text for Obsidian links.
+ * Explicitly excludes file paths to avoid creating broken nodes in Obsidian.
+ */
+export function extractLinks(text) {
+  if (!text || typeof text !== 'string') return [];
+  const links = new Set();
+
+  // 1. Task IDs: T-0001, T-0002, etc. (at least 4 digits)
+  const taskMatches = text.match(/\bT-\d{4,}\b/gi) || [];
+  for (const tm of taskMatches) {
+    links.add(tm.toUpperCase());
+  }
+
+  // 2. Spec slugs: .moragent/specs/<slug> or specs/<slug>
+  const specMatches = text.match(/(?:\.moragent\/specs\/|specs\/)([a-zA-Z0-9_\-]+)/g) || [];
+  for (const sm of specMatches) {
+    const slug = sm
+      .replace(/^(?:\.moragent\/specs\/|specs\/)/, '')
+      .replace(/\.md$/, '')
+      .replace(/\.json$/, '');
+    if (slug) {
+      links.add(slug);
+    }
+  }
+
+  return Array.from(links);
 }
 
 /**
@@ -47,7 +120,7 @@ export function parseClaudeTranscript(transcriptPath) {
       continue; // Tolerant to partial/corrupted lines
     }
 
-    // 1. User prompts
+    // 1. User prompts: supports strings, arrays of text blocks, and nested message
     if (entry.type === 'user' || entry.role === 'user' || entry.source === 'USER_INPUT') {
       let promptText = '';
       if (typeof entry.content === 'string') {
@@ -56,6 +129,11 @@ export function parseClaudeTranscript(transcriptPath) {
         promptText = entry.message.content;
       } else if (Array.isArray(entry.message?.content)) {
         promptText = entry.message.content
+          .filter((b) => b.type === 'text')
+          .map((b) => b.text || '')
+          .join('\n');
+      } else if (Array.isArray(entry.content)) {
+        promptText = entry.content
           .filter((b) => b.type === 'text')
           .map((b) => b.text || '')
           .join('\n');
@@ -85,15 +163,15 @@ export function parseClaudeTranscript(transcriptPath) {
 
           // Files edited or written
           if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(name)) {
-            const fPath = input.file_path || input.filePath || input.path || input.target_file;
+            const fPath = input.file_path || input.filePath || input.path || input.target_file || input.TargetFile;
             if (fPath && typeof fPath === 'string') {
               filesTouched.add(fPath);
             }
           }
 
           // Bash commands
-          if (['Bash', 'bash', 'terminal'].includes(name) && bashCommands.length < 5) {
-            const cmd = input.command || input.cmd;
+          if (['Bash', 'bash', 'terminal', 'run_command'].includes(name) && bashCommands.length < 5) {
+            const cmd = input.command || input.cmd || input.CommandLine;
             if (cmd && typeof cmd === 'string') {
               bashCommands.push(cmd.trim());
             }
@@ -101,6 +179,9 @@ export function parseClaudeTranscript(transcriptPath) {
         }
       }
 
+      if (typeof entry.message?.content === 'string' && entry.message.content.trim()) {
+        assistantMessages.push(entry.message.content.trim());
+      }
       if (typeof entry.content === 'string' && entry.content.trim()) {
         assistantMessages.push(entry.content.trim());
       }
@@ -124,7 +205,6 @@ export function captureClaude(hookPayload, { root } = {}) {
 
   const sessionId = data.session_id || data.sessionId || 'unknown';
   const transcriptPath = data.transcript_path || data.transcriptPath;
-  const cwd = data.cwd || r;
 
   const { userPrompts, assistantMessages, filesTouched, bashCommands } = parseClaudeTranscript(transcriptPath);
 
@@ -133,30 +213,67 @@ export function captureClaude(hookPayload, { root } = {}) {
     return null;
   }
 
-  // First user prompt as title (<= 80 chars)
+  // Set bilingual language from project config
+  let lang = 'en';
+  try {
+    const cfg = loadConfig(r);
+    if (cfg?.lang) lang = cfg.lang;
+  } catch {
+    lang = getLang() || 'en';
+  }
+  setLang(lang);
+
+  // 1. Determine title: check if first prompt is a MORAGENT task envelope
   const rawTitle = userPrompts[0] || 'Claude session';
   const firstLineTitle = rawTitle.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || rawTitle;
-  const cleanTitle = redactSecrets(firstLineTitle).slice(0, 80);
 
-  // Last assistant message as summary (<= 600 chars)
+  let cleanTitle = redactSecrets(firstLineTitle).slice(0, 80);
+  let detectedTaskId = null;
+
+  const envelopeMatch = firstLineTitle.match(/(?:Lee y ejecuta|Read and execute|\.moragent\/tasks\/|tasks\/)\s*.*?([Tt]-\d{4})/i)
+    || firstLineTitle.match(/\b([Tt]-\d{4})\b/i);
+
+  if (envelopeMatch) {
+    detectedTaskId = envelopeMatch[1].toUpperCase();
+    const taskJsonPath = path.join(dirs(r).tasks, `${detectedTaskId}.json`);
+    if (exists(taskJsonPath)) {
+      const taskData = readJSON(taskJsonPath, null);
+      if (taskData?.title) {
+        cleanTitle = redactSecrets(taskData.title).slice(0, 80);
+      }
+    }
+  }
+
+  // 2. Extract links: ONLY task IDs and spec slugs (NO file paths!)
+  const allText = [
+    ...userPrompts,
+    ...assistantMessages,
+    ...bashCommands,
+  ].join('\n');
+  const detectedLinks = extractLinks(allText);
+  if (detectedTaskId && !detectedLinks.includes(detectedTaskId)) {
+    detectedLinks.unshift(detectedTaskId);
+  }
+
+  // 3. Classify files touched: inside root -> relative; outside root -> count
+  const insideFiles = [];
+  let outsideFilesCount = 0;
+  for (const f of filesTouched) {
+    const res = classifyFilePath(f, r);
+    if (res?.inside) {
+      if (!insideFiles.includes(res.relPath)) {
+        insideFiles.push(res.relPath);
+      }
+    } else {
+      outsideFilesCount++;
+    }
+  }
+
+  // 4. Last assistant message as summary (<= 600 chars)
   const lastAssistantText = assistantMessages.at(-1) || '';
   const cleanSummary = redactSecrets(lastAssistantText).slice(0, 600);
 
-  // Relativize files to project root
-  const realR = (() => { try { return fs.realpathSync(r); } catch { return r; } })();
-  const relFiles = Array.from(new Set(filesTouched.map((f) => {
-    if (!path.isAbsolute(f)) {
-      return path.normalize(f).replace(/^\.\//, '');
-    }
-    const realF = (() => { try { return fs.realpathSync(f); } catch { return f; } })();
-    let rel = path.relative(r, f);
-    if (rel.startsWith('..')) {
-      const realRel = path.relative(realR, realF);
-      if (!realRel.startsWith('..')) rel = realRel;
-    }
-    return rel;
-  })));
-
+  // 5. Build stable note ID and path
   const cleanSessionId = String(sessionId).replace(/[^a-zA-Z0-9]/g, '');
   const shortId = cleanSessionId.slice(0, 8) || 'session';
   const noteId = `session-${today()}-${shortId}`;
@@ -170,6 +287,14 @@ export function captureClaude(hookPayload, { root } = {}) {
     existingData = parsed.data || {};
   }
 
+  if (Array.isArray(existingData.links)) {
+    for (const l of existingData.links) {
+      if (!l.includes('/') && !l.includes('\\') && !detectedLinks.includes(l)) {
+        detectedLinks.push(l);
+      }
+    }
+  }
+
   const frontmatterData = {
     ...existingData,
     id: noteId,
@@ -177,29 +302,37 @@ export function captureClaude(hookPayload, { root } = {}) {
     kind: 'episode',
     title: cleanTitle,
     tags: ['session', 'claude'],
-    links: relFiles.slice(0, 5),
+    links: detectedLinks,
     by: process.env.MORAGENT_ROLE || 'claude',
     sessionId: String(sessionId),
     created: existingData.created || nowISO(),
     updated: nowISO(),
   };
 
+  // 6. Bilingual body
   const bodyParts = [
-    '## Summary',
-    cleanSummary || '_No assistant summary available._',
+    t('## Resumen', '## Summary'),
+    cleanSummary || t('_Sin resumen del asistente disponible._', '_No assistant summary available._'),
   ];
 
-  if (relFiles.length > 0) {
+  if (insideFiles.length > 0 || outsideFilesCount > 0) {
     bodyParts.push('');
-    bodyParts.push('## Files Touched');
-    for (const f of relFiles) {
+    bodyParts.push(t('## Archivos tocados', '## Files Touched'));
+    for (const f of insideFiles) {
       bodyParts.push(`- \`${f}\``);
+    }
+    if (outsideFilesCount > 0) {
+      const msg = t(
+        `_(${outsideFilesCount} archivo${outsideFilesCount === 1 ? '' : 's'} fuera del proyecto)_`,
+        `_(${outsideFilesCount} file${outsideFilesCount === 1 ? '' : 's'} outside project)_`
+      );
+      bodyParts.push(`- ${msg}`);
     }
   }
 
   if (bashCommands.length > 0) {
     bodyParts.push('');
-    bodyParts.push('## Commands Run');
+    bodyParts.push(t('## Comandos', '## Commands'));
     for (const cmd of bashCommands.slice(0, 5)) {
       bodyParts.push(`- \`${redactSecrets(cmd)}\``);
     }
@@ -233,6 +366,15 @@ export function captureCodex(notifyPayload, { root } = {}) {
   const inputMessages = data['input-messages'] || data.input_messages || [];
   const lastAssistant = data['last-assistant-message'] ?? data.last_assistant_message ?? '';
 
+  let lang = 'en';
+  try {
+    const cfg = loadConfig(r);
+    if (cfg?.lang) lang = cfg.lang;
+  } catch {
+    lang = getLang() || 'en';
+  }
+  setLang(lang);
+
   let rawTitle = 'Codex session';
   if (Array.isArray(inputMessages) && inputMessages.length > 0) {
     const first = inputMessages[0];
@@ -246,12 +388,32 @@ export function captureCodex(notifyPayload, { root } = {}) {
   }
 
   const firstLine = rawTitle.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || rawTitle;
-  const cleanTitle = redactSecrets(firstLine).slice(0, 80);
+
+  let cleanTitle = redactSecrets(firstLine).slice(0, 80);
+  let detectedTaskId = null;
+  const envelopeMatch = firstLine.match(/(?:Lee y ejecuta|Read and execute|\.moragent\/tasks\/|tasks\/)\s*.*?([Tt]-\d{4})/i)
+    || firstLine.match(/\b([Tt]-\d{4})\b/i);
+
+  if (envelopeMatch) {
+    detectedTaskId = envelopeMatch[1].toUpperCase();
+    const taskJsonPath = path.join(dirs(r).tasks, `${detectedTaskId}.json`);
+    if (exists(taskJsonPath)) {
+      const taskData = readJSON(taskJsonPath, null);
+      if (taskData?.title) {
+        cleanTitle = redactSecrets(taskData.title).slice(0, 80);
+      }
+    }
+  }
 
   const lastAssistantStr = typeof lastAssistant === 'string'
     ? lastAssistant
     : (lastAssistant?.content || lastAssistant?.text || JSON.stringify(lastAssistant) || '');
   const cleanLastAssistant = redactSecrets(lastAssistantStr).slice(0, 600);
+
+  const detectedLinks = extractLinks(`${rawTitle}\n${lastAssistantStr}`);
+  if (detectedTaskId && !detectedLinks.includes(detectedTaskId)) {
+    detectedLinks.unshift(detectedTaskId);
+  }
 
   // Check if note already exists to accumulate turns (max 5)
   const rawTurnList = [];
@@ -260,7 +422,7 @@ export function captureCodex(notifyPayload, { root } = {}) {
     const parsed = parseFrontmatter(readText(notePath));
     existingData = parsed.data || {};
     const existingBody = parsed.body || '';
-    const regex = /^### Turn \d+:\s*([^\n]+)\n([\s\S]*?)(?=(?:^### Turn \d+:|$))/gm;
+    const regex = /^### Turn(?:o)? \d+:\s*([^\n]+)\n([\s\S]*?)(?=(?:^### Turn(?:o)? \d+:|$))/gm;
     const matches = [...existingBody.matchAll(regex)];
     for (const m of matches) {
       rawTurnList.push({
@@ -268,15 +430,24 @@ export function captureCodex(notifyPayload, { root } = {}) {
         assistant: m[2].trim(),
       });
     }
+    if (Array.isArray(existingData.links)) {
+      for (const l of existingData.links) {
+        if (!l.includes('/') && !l.includes('\\') && !detectedLinks.includes(l)) {
+          detectedLinks.push(l);
+        }
+      }
+    }
   }
 
+  const turnDefaultMsg = t('_Turno completado._', '_Completed turn._');
   rawTurnList.push({
     user: redactSecrets(firstLine.slice(0, 140)),
-    assistant: cleanLastAssistant || '_Completed turn._',
+    assistant: cleanLastAssistant || turnDefaultMsg,
   });
 
   const recentTurns = rawTurnList.slice(-5);
-  const turnBlocks = recentTurns.map((t, idx) => `### Turn ${idx + 1}: ${t.user}\n${t.assistant}`);
+  const turnLabel = t('Turno', 'Turn');
+  const turnBlocks = recentTurns.map((tItem, idx) => `### ${turnLabel} ${idx + 1}: ${tItem.user}\n${tItem.assistant}`);
 
   const frontmatterData = {
     ...existingData,
@@ -285,13 +456,14 @@ export function captureCodex(notifyPayload, { root } = {}) {
     kind: 'episode',
     title: existingData.title || cleanTitle,
     tags: ['session', 'codex'],
+    links: detectedLinks,
     by: process.env.MORAGENT_ROLE || 'codex',
     threadId: String(threadId),
     created: existingData.created || nowISO(),
     updated: nowISO(),
   };
 
-  const body = `## Turns\n\n${turnBlocks.join('\n\n')}`;
+  const body = `${t('## Turnos', '## Turns')}\n\n${turnBlocks.join('\n\n')}`;
   const content = stringifyFrontmatter(frontmatterData, body);
   writeText(notePath, content);
 

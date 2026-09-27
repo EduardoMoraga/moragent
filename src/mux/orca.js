@@ -17,12 +17,21 @@ function handleFrom(text) {
 export default {
   name: 'orca',
   available: () => !!which('orca'),
-  spawn({ root, role, title, command, cwd = root, anchor, direction = 'horizontal' }) {
+  // Split next to the anchor; when Orca cannot split (pane too small, no anchor) or the
+  // project prefers tabs, open the agent in its own tab named after the role.
+  spawn({ root, role, title, command, cwd = root, anchor, direction = 'horizontal', layout = 'split' }) {
     const base = anchor || process.env.ORCA_TERMINAL_HANDLE;
-    const args = ['split'];
-    if (base) args.push('--terminal', base);
-    args.push('--direction', direction === 'vertical' ? 'vertical' : 'horizontal');
-    if (command) args.push('--command', paneCommand({ root, role, command }));
+    const cmd = command ? paneCommand({ root, role, command }) : null;
+    if (layout !== 'tabs' && base) {
+      const args = ['split', '--terminal', base, '--direction', direction === 'vertical' ? 'vertical' : 'horizontal'];
+      if (cmd) args.push('--command', cmd);
+      args.push('--json');
+      const result = run('orca', ['terminal', ...args], { cwd });
+      const handle = result.code === 0 ? handleFrom(result.stdout) : null;
+      if (handle) return { handle, layout: 'split' };
+    }
+    const args = ['create', '--title', title || role || 'agent'];
+    if (cmd) args.push('--command', cmd);
     args.push('--json');
     const result = call(args, { cwd });
     const handle = handleFrom(result.stdout);
@@ -31,7 +40,7 @@ export default {
       t('Orca no devolvió el handle del panel.', 'Orca did not return the pane handle.'),
       title || String(result.stdout).trim().slice(0, 200),
     );
-    return { handle };
+    return { handle, layout: 'tab' };
   },
   send(handle, text, { enter = true } = {}) {
     const args = ['send', '--terminal', handle, '--text', String(text)];

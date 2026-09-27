@@ -1,3 +1,4 @@
+import { moraCommand } from '../core/hooks.js';
 import path from 'node:path';
 import { dirs } from '../core/paths.js';
 import { readText, writeText } from '../core/fsx.js';
@@ -47,11 +48,11 @@ export async function buildEnvelope({ root, task, config }) {
 
 ${es ? 'Al terminar ejecuta' : 'When finished run'}:
 
-\`mora done ${task.id} --summary "…" --files a,b\`
+\`${moraCommand()} done ${task.id} --summary "…" --files a,b\`
 
 ${es ? 'Si quedas bloqueado, ejecuta' : 'If blocked, run'}:
 
-\`mora block ${task.id} --reason "…"\``);
+\`${moraCommand()} block ${task.id} --reason "…"\``);
   return sections.join('\n\n') + '\n';
 }
 

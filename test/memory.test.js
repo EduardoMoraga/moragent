@@ -9,7 +9,7 @@ import { dirs } from '../src/core/paths.js';
 import { ensureDir } from '../src/core/fsx.js';
 import { parseFrontmatter, stringifyFrontmatter } from '../src/memory/frontmatter.js';
 import { tokenize, bm25Search, extractSnippet, stemWord } from '../src/memory/search.js';
-import { add, list, recall, promote, gc, contextPack, getNote, captureClaude, captureCodex, hookConfig, redactSecrets, parseClaudeTranscript } from '../src/memory/index.js';
+import { add, list, recall, promote, gc, contextPack, getNote, captureClaude, captureCodex, hookConfig, redactSecrets, parseClaudeTranscript, classifyFilePath, extractLinks } from '../src/memory/index.js';
 import memoryCmd from '../src/commands/memory.js';
 import contextCmd from '../src/commands/context.js';
 
@@ -487,7 +487,7 @@ test('capture: captureClaude creates episodic note from non-trivial transcript w
   assert.ok(raw.includes('[REDACTED_SECRET]'));
   assert.match(raw, /tier: episodic/);
   assert.match(raw, /kind: episode/);
-  assert.match(raw, /links: \[src\/memory\/capture\.js\]/);
+  assert.match(raw, /links: \[\]/);
   assert.match(raw, /All verified and clean\./);
   assert.match(raw, /- `src\/memory\/capture\.js`/);
 });
@@ -653,4 +653,216 @@ test('CLI: memory capture handles claude and codex payloads, logging on errors w
     process.stdout.write = origOut;
   }
 });
+
+test('capture: classifyFilePath correctly separates inside vs outside project files', () => {
+  const root = tmp();
+  const insideRel = classifyFilePath('src/memory/capture.js', root);
+  assert.equal(insideRel.inside, true);
+  assert.equal(insideRel.relPath, 'src/memory/capture.js');
+
+  const insideAbs = classifyFilePath(path.join(root, 'src', 'index.js'), root);
+  assert.equal(insideAbs.inside, true);
+  assert.equal(insideAbs.relPath, 'src/index.js');
+
+  const outsideSys = classifyFilePath('/etc/hosts', root);
+  assert.equal(outsideSys.inside, false);
+
+  const outsideHome = classifyFilePath(path.join(os.homedir(), '.claude', 'settings.json'), root);
+  assert.equal(outsideHome.inside, false);
+
+  const outsideDotDot = classifyFilePath('../../../other.txt', root);
+  assert.equal(outsideDotDot.inside, false);
+});
+
+test('capture: extractLinks only extracts task IDs and spec slugs, never file paths', () => {
+  const text = `
+    Lee y ejecuta .moragent/tasks/T-0003.md para la spec .moragent/specs/auth-oauth2.
+    También revisa T-0004 y specs/data-model.md.
+    Modifica src/core/paths.js y /etc/hosts.
+  `;
+  const links = extractLinks(text);
+  assert.deepEqual(links.sort(), ['T-0003', 'T-0004', 'auth-oauth2', 'data-model'].sort());
+  assert.ok(!links.includes('src/core/paths.js'));
+  assert.ok(!links.includes('/etc/hosts'));
+});
+
+test('capture: files outside root are omitted from list and counted, inside files listed', () => {
+  const root = tmp();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'outside-test-'));
+  const transcriptFile = path.join(tmpDir, 'transcript.jsonl');
+
+  const lines = [
+    JSON.stringify({ type: 'user', content: 'Edit both inside and outside files' }),
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'Write', input: { file_path: path.join(root, 'src/inside.js') } },
+          { type: 'tool_use', name: 'Edit', input: { file_path: '/etc/hosts' } },
+          { type: 'tool_use', name: 'Edit', input: { file_path: path.join(os.homedir(), '.claude/settings.json') } },
+          { type: 'text', text: 'Edited 3 files in total.' },
+        ],
+      },
+    }),
+    JSON.stringify({ type: 'user', content: 'Turn 2 confirm' }),
+    JSON.stringify({ type: 'assistant', content: 'Confirmed.' }),
+  ];
+  fs.writeFileSync(transcriptFile, lines.join('\n'));
+
+  const payload = {
+    session_id: 'sess-outside-files',
+    transcript_path: transcriptFile,
+    cwd: root,
+  };
+
+  const res = captureClaude(payload, { root });
+  assert.ok(res);
+  const raw = fs.readFileSync(res.path, 'utf8');
+
+  // Inside file is listed
+  assert.match(raw, /- `src\/inside\.js`/);
+  // Outside files are NOT listed individually
+  assert.ok(!raw.includes('- `/etc/hosts`'));
+  assert.ok(!raw.includes('settings.json`'));
+  // Outside files count is shown
+  assert.match(raw, /2 archivos fuera del proyecto/);
+  // Links does NOT contain file paths
+  assert.match(raw, /links: \[\]/);
+});
+
+test('capture: task envelope prompt uses task JSON title and links task ID', () => {
+  const root = tmp();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'envelope-test-'));
+  const transcriptFile = path.join(tmpDir, 'transcript.jsonl');
+
+  // Create task JSON in .moragent/tasks/T-0003.json
+  const taskDir = dirs(root).tasks;
+  ensureDir(taskDir);
+  fs.writeFileSync(
+    path.join(taskDir, 'T-0003.json'),
+    JSON.stringify({
+      id: 'T-0003',
+      title: 'Configurar base de datos PostgreSQL con migraciones',
+      role: 'backend',
+      status: 'queued',
+    })
+  );
+
+  const lines = [
+    JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: 'Lee y ejecuta .moragent/tasks/T-0003.md' },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'Write', input: { file_path: path.join(root, 'src/db.js') } },
+          { type: 'text', text: 'Base de datos configurada.' },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: 'Verificar conexión' }] },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      content: 'Conexión verificada y lista.',
+    }),
+  ];
+  fs.writeFileSync(transcriptFile, lines.join('\n'));
+
+  const payload = {
+    session_id: 'sess-envelope-123',
+    transcript_path: transcriptFile,
+    cwd: root,
+  };
+
+  const res = captureClaude(payload, { root });
+  assert.ok(res);
+  const raw = fs.readFileSync(res.path, 'utf8');
+
+  // Title comes from task JSON!
+  assert.match(raw, /title: "?Configurar base de datos PostgreSQL con migraciones"?/);
+  // Links contains T-0003!
+  assert.match(raw, /links: \[T-0003\]/);
+  // File is in body
+  assert.match(raw, /- `src\/db\.js`/);
+});
+
+test('capture: real Claude Code transcript format and bilingual headers (es vs en)', () => {
+  // Test Spanish headers
+  const rootEs = tmp(); // default preset creates lang: es
+  const tmpDirEs = fs.mkdtempSync(path.join(os.tmpdir(), 'real-claude-es-'));
+  const transcriptEs = path.join(tmpDirEs, 'transcript.jsonl');
+
+  const linesReal = [
+    JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: 'Implementar autenticación para .moragent/specs/auth-spec y tarea T-0009',
+      },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'Edit', input: { file_path: path.join(rootEs, 'src/auth.js') } },
+          { type: 'tool_use', name: 'Bash', input: { command: 'npm test' } },
+          { type: 'text', text: 'Autenticación implementada.' },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: 'Revisa si los tests pasaron' }],
+      },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'text', text: 'Todos los tests pasaron correctamente.' },
+        ],
+      },
+    }),
+  ];
+  fs.writeFileSync(transcriptEs, linesReal.join('\n'));
+
+  const resEs = captureClaude({
+    session_id: 'real-sess-es',
+    transcript_path: transcriptEs,
+    cwd: rootEs,
+  }, { root: rootEs });
+
+  const rawEs = fs.readFileSync(resEs.path, 'utf8');
+  assert.match(rawEs, /## Resumen/);
+  assert.match(rawEs, /## Archivos tocados/);
+  assert.match(rawEs, /## Comandos/);
+  assert.match(rawEs, /Todos los tests pasaron correctamente\./);
+  assert.match(rawEs, /- `src\/auth\.js`/);
+  assert.match(rawEs, /- `npm test`/);
+  assert.match(rawEs, /links: \[T-0009, auth-spec\]/);
+
+  // Test English headers
+  const rootEn = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-en-'));
+  const cfgEn = defaultConfig({ project: 'test-en', lang: 'en', preset: 'solo' });
+  scaffold(rootEn, cfgEn);
+
+  const resEn = captureClaude({
+    session_id: 'real-sess-en',
+    transcript_path: transcriptEs,
+    cwd: rootEn,
+  }, { root: rootEn });
+
+  const rawEn = fs.readFileSync(resEn.path, 'utf8');
+  assert.match(rawEn, /## Summary/);
+  assert.match(rawEn, /## Files Touched/);
+  assert.match(rawEn, /## Commands/);
+});
+
 
