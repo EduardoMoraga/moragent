@@ -6,10 +6,13 @@ import { MoragentError } from './errors.js';
 export const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const TEMPLATES = path.join(PKG_ROOT, 'templates');
 
+// Walks up like git does, but never past the enclosing git repository: a repo without its own
+// .moragent/ must not silently join a project that lives above it (e.g. a workspace root).
 export function findRoot(start = process.cwd()) {
   let dir = path.resolve(start);
   for (;;) {
     if (exists(path.join(dir, '.moragent', 'moragent.json'))) return dir;
+    if (exists(path.join(dir, '.git'))) return null;
     const up = path.dirname(dir);
     if (up === dir) return null;
     dir = up;

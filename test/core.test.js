@@ -126,3 +126,13 @@ test('windows quoting keeps spaced paths and metacharacters as one literal argum
   assert.equal(which(process.execPath), process.execPath, 'absolute paths resolve to themselves');
   assert.equal(which(''), null);
 });
+
+test('findRoot never crosses into a project above the enclosing git repo', () => {
+  const top = tmp();
+  scaffold(top, defaultConfig({ project: 'workspace', lang: 'es', preset: 'solo' }));
+  const repo = path.join(top, 'lab', 'app');
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'src'));
+  assert.equal(findRoot(path.join(repo, 'src')), null, 'a repo without .moragent is not part of the workspace project');
+  assert.equal(findRoot(path.join(top, 'lab')), top, 'plain folders still resolve upwards');
+});

@@ -375,6 +375,14 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
       case 'abrir': case 'open':
         await openPane(list[0]);
         return;
+      case 'nuevo': case 'new': {
+        // Start a separate project in the current folder instead of the one found above it.
+        if (root && path.resolve(root) === path.resolve(cwd)) { store.addMessage({ from: 'system', text: t('Esta carpeta ya es el proyecto actual.', 'This folder already is the current project.') }); return; }
+        root = null; config = null; session = { id: null, provider: null };
+        store.set({ initialized: false, agents: {}, project: path.basename(cwd), goal: '', memory: memoryCounts(null), spec: null, brain: { linked: false, vault: null } });
+        store.addMessage({ from: 'system', text: t(`Listo: el próximo mensaje crea un proyecto nuevo en ${cwd}.`, `Done: your next message creates a new project in ${cwd}.`) });
+        return;
+      }
       case 'cancel': case 'cancelar':
         for (const ac of controllers) ac.abort();
         store.addMessage({ from: 'system', text: t('Trabajo en curso cancelado.', 'Running work cancelled.') });
@@ -423,6 +431,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /equipo           ver el equipo · /equipo <rol> <motor> para cambiarlo
 /orquestador <m>  elegir el motor del orquestador
 /memoria [texto]  ver o buscar en la memoria
+/nuevo            crear un proyecto nuevo en esta carpeta
 /plan <texto>     pedir un plan explícito
 /abrir <rol|id>   sacar un subagente a un panel externo
 /cancel           cancelar lo que está corriendo
@@ -431,6 +440,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /crew             show the crew · /crew <role> <engine> to change it
 /orchestrator <e> pick the orchestrator engine
 /memory [text]    show or search memory
+/new              create a new project in this folder
 /plan <text>      ask for an explicit plan
 /open <role|id>   take a subagent out into a terminal pane
 /cancel           cancel running work
@@ -441,8 +451,10 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
   engine.welcome = () => {
     const ready = store.state.providers.filter((p) => p.ready).map((p) => p.label);
     const conn = ready.length ? t(`Conectado: ${ready.join(', ')}.`, `Connected: ${ready.join(', ')}.`) : t('Ningún motor conectado: usa /login.', 'No engine connected: use /login.');
+    const elsewhere = root && path.resolve(root) !== path.resolve(cwd);
+    const where = elsewhere ? t(` (en ${root}; para un proyecto nuevo en esta carpeta usa /nuevo)`, ` (in ${root}; for a new project in this folder use /new)`) : '';
     store.addMessage({ from: 'orchestrator', text: root
-      ? t(`${conn}\nProyecto ${config.project}. ¿Qué hacemos? (/help para ver comandos)`, `${conn}\nProject ${config.project}. What are we doing? (/help for commands)`)
+      ? t(`${conn}\nProyecto ${config.project}${where}. ¿Qué hacemos? (/help para ver comandos)`, `${conn}\nProject ${config.project}${where}. What are we doing? (/help for commands)`)
       : t(`${conn}\nEsta carpeta todavía no es un proyecto MORAGENT. Cuéntame qué quieres construir y lo preparo.`, `${conn}\nThis folder is not a MORAGENT project yet. Tell me what you want to build and I will set it up.`) });
   };
   return engine;

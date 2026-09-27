@@ -1,6 +1,6 @@
 import { t } from '../core/i18n.js';
 
-export const SLASH_COMMANDS = ['/login', '/plan', '/equipo', '/memoria', '/abrir', '/spec', '/help', '/salir'];
+export const SLASH_COMMANDS = ['/login', '/plan', '/equipo', '/orquestador', '/memoria', '/abrir', '/nuevo', '/cancel', '/help', '/salir'];
 
 export function decodeKey(buf) {
   const s = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
