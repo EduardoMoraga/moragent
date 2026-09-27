@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/master/insta
 irm https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.ps1 | iex
 ```
 
-<sub>Prefer npm? `npm i -g github:EduardoMoraga/moragent` · try without installing: `npx github:EduardoMoraga/moragent`</sub>
+<sub>Prefer npm? `npm i -g https://github.com/EduardoMoraga/moragent/archive/refs/heads/master.tar.gz` · try without installing: `npx github:EduardoMoraga/moragent`</sub>
 
 Then, inside any repo:
 
