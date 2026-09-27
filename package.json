@@ -1,0 +1,21 @@
+{
+  "name": "moragent",
+  "version": "4.0.0",
+  "description": "The executive orchestrator for agentic development: one crew of Claude Code, Codex, Antigravity and Pi in real terminal panes, with layered memory, spec-driven phases and an Obsidian second brain.",
+  "type": "module",
+  "bin": {
+    "moragent": "bin/mora.js",
+    "mora": "bin/mora.js"
+  },
+  "files": ["bin", "src", "templates", "plugin", "docs/ARCHITECTURE.md", "README.md", "README.es.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test test/",
+    "start": "node bin/mora.js"
+  },
+  "keywords": ["ai-agents", "multi-agent", "orchestrator", "claude-code", "codex", "antigravity", "pi", "agentic", "spec-driven-development", "obsidian", "second-brain", "tmux", "herdr", "orca", "cli"],
+  "author": "Eduardo Moraga",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/EduardoMoraga/moragent.git" },
+  "homepage": "https://github.com/EduardoMoraga/moragent#readme"
+}
