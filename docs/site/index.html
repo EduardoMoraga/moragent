@@ -167,6 +167,7 @@ footer p { color: var(--muted); font-size: 14px; }
       <a class="opt" href="#why">Why</a>
       <a class="opt" href="#tour">Tour</a>
       <a class="opt" href="#concepts">Concepts</a>
+      <a class="opt" href="#troubleshooting">Help</a>
       <a class="opt" href="#faq">FAQ</a>
       <a href="https://github.com/EduardoMoraga/moragent">GitHub</a>
       <button class="theme" id="theme" type="button" aria-label="Toggle color theme">◐</button>
@@ -258,14 +259,14 @@ footer p { color: var(--muted); font-size: 14px; }
           <tr><td>Agents in real panes</td><td class="c us"><span class="y">✓</span></td><td class="c y">✓</td><td class="c n">—</td><td class="c n">—</td><td class="c y">✓</td></tr>
           <tr><td>Mix vendors in one crew</td><td class="c us"><span class="y">✓</span></td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">—</td><td class="c p">manual</td></tr>
           <tr><td>Task bus between agents</td><td class="c us"><span class="y">✓</span></td><td class="c p">~</td><td class="c n">—</td><td class="c n">—</td><td class="c n">—</td></tr>
-          <tr><td>Layered memory</td><td class="c us"><span class="y">✓</span></td><td class="c n">—</td><td class="c y">✓</td><td class="c n">—</td><td class="c n">—</td></tr>
+          <tr><td>Layered memory</td><td class="c us"><span class="y">✓</span></td><td class="c n">—</td><td class="c p">~¹</td><td class="c n">—</td><td class="c n">—</td></tr>
           <tr><td>Spec-driven phases</td><td class="c us"><span class="y">✓</span></td><td class="c n">—</td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">—</td></tr>
           <tr><td>Obsidian second brain</td><td class="c us"><span class="y">✓</span></td><td class="c n">—</td><td class="c n">—</td><td class="c n">—</td><td class="c n">—</td></tr>
           <tr><td>One-line install</td><td class="c us"><span class="y">✓</span></td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">—</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">Based on each project's public docs as of September 2026 — <a href="https://github.com/EduardoMoraga/moragent/issues">tell us</a> if something is wrong. MORAGENT doesn't replace herdr, Orca or tmux: it drives them.</p>
+    <p class="note">¹ gentle-ai ships persistent memory through Engram, a single store of observations with full-text search — durable, but not split into layers.<br>Based on each project's public docs as of September 2026 — <a href="https://github.com/EduardoMoraga/moragent/issues">tell us</a> if something is wrong. MORAGENT doesn't replace herdr, Orca or tmux: it drives them.</p>
   </div>
 </section>
 
@@ -312,10 +313,10 @@ footer p { color: var(--muted); font-size: 14px; }
     </div>
     <div class="cards">
       <div class="card"><span class="tag">crew</span><h3>Roles, not prompts</h3><p>Each role has a mission and a CLI. Presets <code>solo</code>, <code>duo</code>, <code>trio</code>, <code>squad</code>. Swap with <code>mora crew set</code>.</p></div>
-      <div class="card"><span class="tag">bus</span><h3>Tasks as files</h3><p><code>queued → sent → running → done | failed | blocked</code>. Workers close with <code>mora done</code> or <code>mora block</code>.</p></div>
+      <div class="card"><span class="tag">bus</span><h3>Tasks as files</h3><p><code>queued → sent → running → done | failed | blocked</code>. Workers close with <code>mora done</code> or <code>mora block</code>; <code>mora resend</code> retries a lost prompt.</p></div>
       <div class="card"><span class="tag">memory</span><h3>Three layers + skills</h3><p><b>canonical</b> decisions, <b>episodic</b> results, <b>transient</b> scratch that expires, and <b>skills</b> synced to every CLI.</p></div>
       <div class="card"><span class="tag">sdd</span><h3>Phases the binary decides</h3><p><code>explore → propose → spec → design → tasks → apply → verify → archive</code>, derived from the files. <code>mora spec next</code>.</p></div>
-      <div class="card"><span class="tag">brain</span><h3>Obsidian second brain</h3><p><code>mora brain link</code> puts <code>.moragent/</code> in your vault. Frontmatter, <code>[[wikilinks]]</code> and a generated <code>Home.md</code>.</p></div>
+      <div class="card"><span class="tag">brain</span><h3>Obsidian second brain</h3><p><code>mora brain link</code> puts <code>.moragent/</code> in your vault. Frontmatter, <code>[[wikilinks]]</code> and a <code>Home.md</code> rebuilt after every <code>done</code>/<code>block</code>.</p></div>
       <div class="card"><span class="tag">plugin</span><h3>Claude Code &amp; Codex</h3><p>The repo is a plugin for both: lead, worker, spec and memory skills that call <code>mora</code>.</p></div>
     </div>
   </div>
@@ -327,10 +328,10 @@ footer p { color: var(--muted); font-size: 14px; }
     <h2>Workers that don't stall — without handing over the keys.</h2>
     <p class="sub">A worker that stops to ask permission in a pane nobody is watching blocks the crew. Each role gets an autonomy level in <code>crew.&lt;role&gt;.autonomy</code>.</p>
     <div class="cards">
-      <div class="card"><span class="tag">auto · default</span><h3>Edit and report back</h3><p>Edits in the repo plus <code>mora</code>, <code>node</code>, <code>npm test</code>, <code>git status</code>/<code>diff</code>. Codex keeps its workspace sandbox; Claude asks for anything else.</p></div>
+      <div class="card"><span class="tag">auto · default</span><h3>Edit and report back</h3><p>Edits in the repo plus <code>mora</code>, <code>node</code>, <code>npm test</code>, <code>git status</code>/<code>diff</code>. Codex and Antigravity stay inside their workspace sandbox; Claude asks for anything else.</p></div>
       <div class="card"><span class="tag">full · --yolo</span><h3>No prompts, no sandbox</h3><p><code>mora up --yolo</code> for one session, or <code>mora config set crew.&lt;role&gt;.autonomy full</code>. Only in a disposable environment.</p></div>
       <div class="card"><span class="tag">ask</span><h3>The CLI's own prompts</h3><p>Nothing is pre-approved. Headless runs are never <code>ask</code>, because nobody could answer them.</p></div>
-      <div class="card"><span class="tag">automatic memory</span><h3>Every session leaves a note</h3><p><code>mora init</code> (or <code>mora sync --hooks</code>) installs a Claude Code <code>SessionEnd</code> hook and Codex <code>notify</code>: one episodic note per session, no LLM, with secrets redacted.</p></div>
+      <div class="card"><span class="tag">automatic memory</span><h3>Every session leaves a note</h3><p>Every task closed with <code>mora done</code> becomes memory. <code>mora init</code> also adds a Claude Code <code>SessionEnd</code> hook to the project. Codex reads <code>notify</code> only from <code>~/.codex/config.toml</code>, so that one waits for <code>mora sync --hooks --global</code>. No LLM, secrets redacted.</p></div>
     </div>
   </div>
 </section>
@@ -358,7 +359,7 @@ footer p { color: var(--muted); font-size: 14px; }
         <table>
           <thead><tr><th>Multiplexer</th><th>Picked when</th></tr></thead>
           <tbody>
-            <tr><td>Orca</td><td>running inside Orca</td></tr>
+            <tr><td>Orca</td><td>running inside Orca — splits next to you, or a tab per role (<code>layout: tabs</code>, or after 4 panes)</td></tr>
             <tr><td>herdr</td><td><code>HERDR_ENV=1</code></td></tr>
             <tr><td>tmux</td><td>inside tmux, or tmux installed</td></tr>
             <tr><td>headless</td><td>nothing else — background runs, logs in <code>.moragent/runs/</code></td></tr>
@@ -366,6 +367,38 @@ footer p { color: var(--muted); font-size: 14px; }
         </table>
       </div>
     </div>
+  </div>
+</section>
+
+<section id="tested">
+  <div class="wrap">
+    <p class="kicker">Tested with</p>
+    <h2>Run end to end, not just unit-tested.</h2>
+    <p class="sub">September 27, 2026, in Orca: each CLI as a worker through <code>mora up</code> → <code>mora dispatch</code> → <code>mora done</code>, in <code>auto</code> mode. Every pane gets <code>mora</code> on its <code>PATH</code>, even with npx or a git clone.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>CLI</th><th>Version</th><th><code>auto</code> flags</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>Codex</td><td>0.154</td><td><code>-s workspace-write -a never</code></td><td><span class="y">✓</span> no prompts</td></tr>
+          <tr><td>Claude Code</td><td>2.1.283</td><td><code>--permission-mode auto --allowedTools …</code></td><td><span class="y">✓</span> no prompts</td></tr>
+          <tr><td>Antigravity</td><td>1.2.x</td><td><code>--sandbox --dangerously-skip-permissions</code></td><td><span class="y">✓</span> no prompts; sandbox refused <code>touch ../outside.txt</code></td></tr>
+          <tr><td>Pi</td><td>0.85</td><td>— (never asks)</td><td><span class="y">✓</span> own trust dialog on first run</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">OpenCode and Gemini CLI are supported by the adapters but were not part of this run.</p>
+  </div>
+</section>
+
+<section id="troubleshooting">
+  <div class="wrap">
+    <p class="kicker">Troubleshooting</p>
+    <h2>When a pane doesn't cooperate.</h2>
+    <p class="sub">The four things that actually came up in real runs.</p>
+    <details><summary>A pane asks "Do you trust this folder?"</summary><p>Claude Code, Codex, Antigravity and Pi ask once per folder. Accept it in that pane; it does not come back.</p></details>
+    <details><summary><code>dispatch</code> fails with PANE_NOT_READY</summary><p>The bottom of the pane shows a trust or update dialog that would swallow the prompt. Accept it and run the same <code>dispatch</code> again. If the prompt already got lost, use <code>mora resend &lt;id&gt;</code> (for <code>queued</code> or <code>sent</code> tasks).</p></details>
+    <details><summary>Panes are too narrow</summary><p><code>mora config set layout tabs</code>, then <code>mora down</code> and <code>mora up</code>: every agent gets its own tab named after its role.</p></details>
+    <details><summary>Codex sessions don't show up in memory</summary><p>Codex ignores project-level <code>notify</code>. Run <code>mora sync --hooks --global</code> to add it to <code>~/.codex/config.toml</code> (it never overwrites an existing one). Tasks closed with <code>mora done</code> are recorded either way.</p></details>
   </div>
 </section>
 

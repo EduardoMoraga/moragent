@@ -21,7 +21,7 @@ test('all documented adapters expose a consistent interface', () => {
 
 test('headless adapter commands match supported CLI flags', () => {
   assert.deepEqual(ADAPTERS.claude.headless({ prompt: 'fix it' }), [
-    'claude', '--permission-mode', 'acceptEdits', '--allowedTools',
+    'claude', '--permission-mode', 'auto', '--allowedTools',
     'Bash(mora:*)', 'Bash(npm test:*)', 'Bash(node:*)', 'Bash(git status:*)', 'Bash(git diff:*)',
     '-p', 'fix it',
   ]);
@@ -43,7 +43,7 @@ test('interactive command applies autonomy, quoting and role options', () => {
   assert.equal(ADAPTERS.codex.interactive({ autonomy: 'ask' }), 'codex');
   assert.equal(ADAPTERS.agy.interactive({ autonomy: 'auto' }), 'agy --sandbox --dangerously-skip-permissions');
   assert.equal(ADAPTERS.gemini.interactive({ autonomy: 'full' }), 'gemini --yolo');
-  assert.match(ADAPTERS.claude.interactive(), /--permission-mode acceptEdits/);
+  assert.match(ADAPTERS.claude.interactive(), /--permission-mode auto/);
   assert.match(ADAPTERS.claude.interactive(), /'Bash\(mora:\*\)'/);
 });
 

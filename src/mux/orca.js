@@ -65,6 +65,10 @@ export default {
     );
     checked(result, 'orca terminal send');
   },
+  key(handle, key) {
+    const text = key === 'down' ? '\x1b[B' : key === 'enter' ? '\r' : String(key);
+    call(['send', '--terminal', handle, '--text', text]);
+  },
   read(handle, { lines = 60 } = {}) {
     const result = call(['read', '--terminal', handle, '--screen', '--json']);
     const data = parseJSON(result.stdout);

@@ -50,12 +50,12 @@ Correr varios agentes a la vez es fácil. Lograr que **se repartan el trabajo, r
 | Agentes en paneles reales | ✓ (Orca · herdr · tmux · headless) | ✓ | — | — | ✓ |
 | Mezclar proveedores en un equipo | ✓ | ✓ | ✓ | — | ✓ manual |
 | Bus de tareas entre agentes | ✓ `dispatch` / `done` / `wait` | ~ enviar texto a paneles | — | — | — |
-| Memoria en capas | ✓ canónica · episódica · transitoria · skills | — | ✓ | — | — |
+| Memoria en capas | ✓ canónica · episódica · transitoria · skills | — | ~¹ | — | — |
 | Fases guiadas por spec (SDD) | ✓ 8 fases, estado derivado de archivos | — | ✓ | ✓ | — |
 | Segundo cerebro en Obsidian | ✓ `brain link` | — | — | — | — |
 | Instalación en una línea | ✓ | ✓ | ✓ | ✓ | — |
 
-<sub>Comparación basada en la documentación pública de cada proyecto a septiembre de 2026; si algo está mal, abre un issue. MORAGENT no reemplaza a herdr, Orca ni tmux: los **conduce**.</sub>
+<sub>¹ gentle-ai trae memoria persistente con Engram, un único almacén de observaciones con búsqueda de texto completo: es duradera, pero no está separada en capas.<br>Comparación basada en la documentación pública de cada proyecto a septiembre de 2026; si algo está mal, abre un issue. MORAGENT no reemplaza a herdr, Orca ni tmux: los **conduce**.</sub>
 
 ## Recorrido de 60 segundos
 
@@ -104,7 +104,7 @@ flowchart LR
 
 **Equipo (crew).** Roles con una misión y un CLI cada uno. Presets: `solo` (lead), `duo` (+backend), `trio` (+frontend), `squad` (+helper, +dev). Cambia quién hace qué con `mora crew set <rol> <cli>`.
 
-**Bus.** Las tareas son archivos JSON con un estado: `queued → sent → running → done | failed | blocked`. Sin servidor ni daemon: cualquier agente de cualquier proveedor puede leerlas y escribirlas.
+**Bus.** Las tareas son archivos JSON con un estado: `queued → sent → running → done | failed | blocked`. Sin servidor ni daemon: cualquier agente de cualquier proveedor puede leerlas y escribirlas. Si un prompt se perdió (por ejemplo, porque se escribió dentro de un diálogo), `mora resend <id>` vuelve a enviar el sobre al mismo panel.
 
 **Memoria en tres capas, más procedimientos.**
 
@@ -119,7 +119,7 @@ flowchart LR
 
 **Fases guiadas por spec.** `explore → propose → spec → design → tasks → apply → verify → archive`. La fase **se deriva de los archivos en disco** (requisitos EARS en `spec.md`, ítems `- [ ]` en `tasks.md`…), así que el binario —no el modelo— decide qué sigue: `mora spec next <slug>`.
 
-**Segundo cerebro.** `mora brain link` enlaza `.moragent/` dentro de tu vault de Obsidian (o lo copia con `--copy`). Las notas usan frontmatter y `[[wikilinks]]`, y `Home.md` es un mapa de contenido generado, así que la vista de grafo muestra tareas, specs y decisiones conectadas.
+**Segundo cerebro.** `mora brain link` enlaza `.moragent/` dentro de tu vault de Obsidian (o lo copia con `--copy`). Las notas usan frontmatter y `[[wikilinks]]`, y `Home.md` es un mapa de contenido generado, así que la vista de grafo muestra tareas, specs y decisiones conectadas. Con un vault enlazado, `Home.md` se regenera solo después de cada `mora done` y `mora block`.
 
 ## CLIs y multiplexores soportados
 
@@ -141,6 +141,10 @@ flowchart LR
 
 Fuerza uno con `mora up --mux tmux` o `mora config set mux tmux`.
 
+**Distribución.** `layout` es `split` (por defecto) o `tabs`. En Orca, `split` abre cada agente junto a tu terminal; si la división falla o la pestaña ya tiene 4 paneles, ese agente recibe su propia pestaña con el nombre de su rol. `mora config set layout tabs` usa siempre pestañas.
+
+**`mora` dentro de cada panel.** `mora up` escribe un pequeño shim en `.moragent/runs/bin` y lo pone primero en el `PATH` de cada panel, así los agentes pueden ejecutar `mora done` aunque hayas instalado MORAGENT con `npx` o desde un clon de git.
+
 `mora sync` mantiene un `AGENTS.md` canónico y escribe un bloque gestionado (entre marcadores `<!-- moragent:… -->`) en cada archivo que el equipo necesita. Nunca toca tu texto fuera de los marcadores.
 
 ## Autonomía y seguridad
@@ -149,31 +153,44 @@ Un agente que se detiene a preguntar "¿puedo ejecutar `mora done`?" en un panel
 
 | Modo | Qué puede hacer el agente sin preguntar | Flags que pasa MORAGENT |
 |---|---|---|
-| `auto` **(por defecto)** | editar archivos del repo y ejecutar `mora …`, `node`, `npm test`, `git status` y `git diff`; lo demás sigue preguntando (Claude) o queda dentro del sandbox del workspace (Codex) | Claude: `--permission-mode acceptEdits --allowedTools "Bash(mora:*)" "Bash(npm test:*)" "Bash(node:*)" "Bash(git status:*)" "Bash(git diff:*)"` · Codex: `-s workspace-write -a never` · Antigravity: `--mode accept-edits` · Gemini: `--approval-mode auto_edit` |
+| `auto` **(por defecto)** | editar archivos del repo y ejecutar `mora …`, `node`, `npm test`, `git status` y `git diff`; el resto de los comandos lo decide el clasificador del modo auto de Claude (Claude) o queda dentro del sandbox del workspace (Codex, Antigravity) | Claude: `--permission-mode auto --allowedTools "Bash(mora:*)" "Bash(npm test:*)" "Bash(node:*)" "Bash(git status:*)" "Bash(git diff:*)"` · Codex: `-s workspace-write -a never` · Antigravity: `--sandbox --dangerously-skip-permissions` · Gemini: `--approval-mode auto_edit` |
 | `full` | cualquier cosa: sin preguntas ni sandbox | Claude/Antigravity: `--dangerously-skip-permissions` · Codex: `--dangerously-bypass-approvals-and-sandbox` · Gemini: `--yolo` |
 | `ask` | nada; aplican las preguntas propias del CLI | ninguno |
 
 Pi y OpenCode no piden permisos, así que no reciben flags extra. Las ejecuciones headless nunca son `ask` (nadie podría responder): corren al menos en `auto`.
 
-**Por qué `auto` es el default:** es el mínimo de permisos con el que un agente puede terminar una tarea y reportar solo. Codex mantiene su sandbox del workspace y Claude sólo ejecuta sin preguntar los comandos de la lista.
+**Por qué `auto` es el default:** es el mínimo de permisos con el que un agente puede terminar una tarea y reportar solo. Codex mantiene su sandbox del workspace y Claude sólo ejecuta sin preguntar los comandos de la lista. El modo `accept-edits` de Antigravity igual pregunta antes de *cada* comando de shell (incluso `mora done`), así que `auto` lo corre dentro de su sandbox sin preguntas: rechaza las escrituras fuera del workspace.
 
 ```sh
 mora config set crew.backend.autonomy full   # un rol, guardado en moragent.json
 mora up --yolo                               # cada panel que abre este comando corre en full
 ```
 
-Usa `full` / `--yolo` sólo en un entorno desechable (contenedor, VM, rama de prueba) que no te importe perder. La primera vez que un CLI se abre en una carpeta puede preguntar si confías en ella: `mora up` te lo recuerda, y `dispatch` a un panel de Orca no envía nada mientras ese diálogo esté en pantalla.
+Usa `full` / `--yolo` sólo en un entorno desechable (contenedor, VM, rama de prueba) que no te importe perder. La primera vez que un CLI se abre en una carpeta puede preguntar si confías en ella: `mora up` te lo recuerda, y `dispatch` a un panel de Orca no envía nada mientras haya un diálogo de confianza o de actualización al fondo de la pantalla (ver [Solución de problemas](#solución-de-problemas)).
 
 ## Memoria automática
 
-Cada sesión de un agente deja sola una nota episódica. `mora init` instala los hooks de captura (omítelos con `--no-hooks`) y `mora sync --hooks` los agrega a un proyecto existente. Llaman a `mora` (o a `npx -y moragent` si `mora` no está en tu PATH):
+Toda tarea terminada ya queda en memoria gracias a `mora done`, sea cual sea el CLI. Además, las sesiones de los agentes pueden dejar una nota por su cuenta:
 
-- **Claude Code** — un hook `SessionEnd` en `.claude/settings.json` ejecuta `mora memory capture --from claude`.
-- **Codex** — `notify = ["mora", "memory", "capture", "--from", "codex"]` en `.codex/config.toml`, llamado al final de cada turno.
+- **Claude Code** — `mora init` agrega un hook `SessionEnd` al `.claude/settings.json` del proyecto (omítelo con `--no-hooks`; agrégalo después con `mora sync --hooks`).
+- **Codex** — Codex ignora `notify` en la configuración del proyecto (y lo advierte en cada arranque), así que sólo funciona en tu configuración de usuario. MORAGENT la toca sólo si se lo pides: `mora sync --hooks --global` agrega `notify` a `~/.codex/config.toml`, y nunca si ya tienes un `notify`. Fuera de proyectos MORAGENT la captura no hace nada.
 
-Nunca reemplaza hooks ni un `notify` que ya tengas; `mora sync --hooks --dry-run` muestra qué escribiría.
+Los hooks llaman a la misma instalación de MORAGENT que ejecutaste (`mora` si está en tu PATH; si no, su ruta absoluta, así que también funciona con npx y clones de git). `mora sync --hooks --dry-run` muestra qué se escribiría, y los hooks existentes nunca se reemplazan.
 
 La captura es determinista (sin LLM): guarda el primer pedido, la última respuesta, los archivos editados y algunos comandos relevantes, en **una nota por sesión**. Omite las sesiones triviales y oculta todo lo que parezca un secreto (`sk-…`, `ghp_…`, `AKIA…`, llaves privadas). Un error de captura nunca rompe a tu agente: queda registrado en `.moragent/runs/capture.log`.
+
+## Probado con
+
+De punta a punta el 27 de septiembre de 2026 en Orca: cada CLI como agente con `mora up` → `mora dispatch` → `mora done`, en modo `auto`.
+
+| CLI | Versión | Flags de `auto` | Resultado |
+|---|---|---|---|
+| Codex | 0.154 | `-s workspace-write -a never` | ✓ sin preguntas |
+| Claude Code | 2.1.283 | `--permission-mode auto --allowedTools …` (mora, node, npm test, git status/diff) | ✓ sin preguntas |
+| Antigravity | 1.2.x | `--sandbox --dangerously-skip-permissions` | ✓ sin preguntas; el sandbox rechazó `touch ../fuera.txt` |
+| Pi | 0.85 | — (Pi no pide permisos) | ✓ — Pi muestra su propio diálogo de confianza la primera vez |
+
+Los adaptadores soportan OpenCode y Gemini CLI, pero no fueron parte de esta prueba.
 
 ## Plugin para Claude Code y Codex
 
@@ -189,6 +206,20 @@ El mismo repo es plugin para ambos y trae las skills de MORAGENT (protocolo del 
 Para Codex, el repo trae `.codex-plugin/plugin.json`, que apunta a las mismas skills en `plugin/skills/`.
 
 Las skills usan el CLI `mora` (o `npx moragent` si no está instalado).
+
+## Solución de problemas
+
+**Un panel muestra "¿Confías en esta carpeta?".** Claude Code, Codex, Antigravity y Pi lo preguntan una vez por carpeta. Acéptalo en ese panel; no vuelve a aparecer.
+
+**`dispatch` falla con `PANE_NOT_READY`.** Al fondo de ese panel hay un diálogo de confianza o de actualización que se habría tragado el prompt. Acepta el diálogo en el panel y vuelve a ejecutar el mismo `dispatch`. Si la tarea ya se creó o su prompt se perdió, usa `mora resend <id>` (sirve para tareas `queued` y `sent`).
+
+**Los paneles quedan muy angostos.** Orca ya pasa a una pestaña nueva después de 4 paneles; para darle a cada agente su propia pestaña, ejecuta `mora config set layout tabs`, luego `mora down` y `mora up` (los paneles que ya están corriendo se mantienen como están).
+
+**Las sesiones de Codex no aparecen en la memoria.** Codex sólo lee `notify` desde `~/.codex/config.toml`. Ejecuta `mora sync --hooks --global` (no sobrescribe un `notify` existente). Las tareas cerradas con `mora done` quedan registradas igual.
+
+**Un agente dice `mora: command not found`.** Los paneles que abre `mora up` tienen `mora` en su `PATH`; los que abriste a mano, no. Vuelve a abrir el rol con `mora up <rol>`.
+
+Para todo lo demás, `mora doctor` revisa Node, cada CLI, los multiplexores, Obsidian y los archivos del proyecto, y muestra un arreglo de una línea para cada problema.
 
 ## Preguntas frecuentes — si vienes del chat
 

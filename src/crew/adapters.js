@@ -12,7 +12,9 @@ const CLAUDE_TOOLS = [
 
 const MODES = {
   claude: {
-    auto: ['--permission-mode', 'acceptEdits', '--allowedTools', ...CLAUDE_TOOLS],
+    // acceptEdits still stops on any non-trivial shell command (heredocs, $VARS); auto mode decides
+    // those itself. The allowlist keeps the MORAGENT protocol commands prompt-free either way.
+    auto: ['--permission-mode', 'auto', '--allowedTools', ...CLAUDE_TOOLS],
     full: ['--dangerously-skip-permissions'],
     ask: [],
   },

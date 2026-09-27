@@ -91,19 +91,24 @@ function printStatus(slug, state) {
   out(`${bar} ${slug} → ${state.phase}`);
 }
 
+// One bus task per unchecked spec task, sent through `mora dispatch` (which creates the task and
+// writes its envelope). Tasks already on the bus for this spec — same title — are not re-sent.
 async function dispatchTasks(root, slug, tasks) {
-  let createTask;
-  try { ({ createTask } = await import('../bus/tasks.js')); }
-  catch { throw new MoragentError('BUS_UNAVAILABLE', t('El bus de tareas aún no está disponible.', 'Task bus is not available yet.'), 'mora spec tasks <slug>'); }
+  const { listTasks } = await import('../bus/tasks.js');
+  const { default: dispatch } = await import('./dispatch.js');
+  const onBus = new Set(listTasks(root).filter((x) => x.spec === slug).map((x) => x.title));
   const made = [];
-  for (const task of tasks.filter((x) => !x.done)) {
-    made.push(createTask({ root, title: task.title, role: task.role, spec: slug, by: 'spec', body: `${task.title}\n\n${t('Done when', 'Done when')}: ${task.doneWhen}` }));
+  for (const task of tasks.filter((x) => !x.done && !onBus.has(x.title))) {
+    const body = `${task.title}\n\n${t('Listo cuando', 'Done when')}: ${task.doneWhen}`;
+    await mutedStdout(() => dispatch.run({ _: [task.role, body], flags: { spec: slug, title: task.title } }, { root, json: false }));
+    made.push({ role: task.role, title: task.title });
   }
-  try {
-    const mod = await import('./dispatch.js');
-    if (mod?.default?.run) {
-      for (const task of made) await mod.default.run({ _: [task.role, `Lee y ejecuta .moragent/tasks/${task.id}.md`], flags: { spec: slug } }, { root, json: false });
-    }
-  } catch { /* dispatch can be absent while backend is in progress */ }
   return made;
+}
+
+async function mutedStdout(fn) {
+  const write = process.stdout.write;
+  process.stdout.write = () => true;
+  try { return await fn(); }
+  finally { process.stdout.write = write; }
 }

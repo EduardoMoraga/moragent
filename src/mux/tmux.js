@@ -30,6 +30,10 @@ export default {
     call(['send-keys', '-t', handle, '-l', String(text)]);
     if (enter) call(['send-keys', '-t', handle, 'Enter']);
   },
+  key(handle, key) {
+    const name = key === 'down' ? 'Down' : key === 'enter' ? 'Enter' : String(key);
+    call(['send-keys', '-t', handle, name]);
+  },
   read(handle, { lines = 60 } = {}) {
     return call(['capture-pane', '-p', '-t', handle, '-S', `-${Math.max(1, Number(lines) || 60)}`]).stdout;
   },

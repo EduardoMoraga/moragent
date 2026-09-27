@@ -35,6 +35,10 @@ export default {
   send(handle, text, { enter = true } = {}) {
     call(enter ? ['run', handle, String(text)] : ['send-text', handle, String(text)]);
   },
+  key(handle, key) {
+    const text = key === 'down' ? '\x1b[B' : key === 'enter' ? '\r' : String(key);
+    call(['send-text', handle, text]);
+  },
   read(handle, { lines = 60 } = {}) {
     return call(['read', handle, '--source', 'recent-unwrapped', '--lines', String(lines), '--format', 'text']).stdout;
   },

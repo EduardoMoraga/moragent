@@ -142,14 +142,20 @@ ADAPTERS: { claude, codex, agy, pi, opencode, gemini }
 adapter = {
   id, label, bin,
   installed() -> bool,
-  interactive({ root, role }) -> string            // shell command that starts the TUI
-  headless({ root, role, prompt }) -> [cmd, ...args] // one-shot, non-interactive, allowed to edit
+  interactive({ root, role, member, autonomy }) -> string
+  headless({ root, role, prompt, member, autonomy }) -> [cmd, ...args]
   instructionFiles: ['AGENTS.md'] | ['CLAUDE.md'] | ['GEMINI.md', 'AGENTS.md'],
-  skillsDirs: ['.claude/skills'] | ['.agents/skills'],
-  docs: 'https://…'
+  skillsDirs: ['.claude/skills'] | ['.agents/skills'] | ['.pi/skills'] | ['.opencode/skill'],
+  docs, install,
 }
+autonomyFor({ autonomy, member, headless=false }) -> 'auto' | 'full' | 'ask'
 getAdapter(id) -> adapter (throws UNKNOWN_CLI)
 ```
+
+Autonomy modes are per member (`crew.<role>.autonomy`) or per launch (`mora up --yolo` → `full`).
+Headless `ask` is coerced to `auto` so unattended agents can finish and call `mora done`/`mora block`.
+Claude `auto` grants a narrow tool set for `mora`, tests, node and git inspection; Codex headless uses
+workspace-write without approval prompts; `agy` uses its workspace sandbox with prompt skipping in `auto`.
 
 ## 8. Multiplexers (backend) — `src/mux/*.js`
 
@@ -158,15 +164,22 @@ detectMux(pref = 'auto') -> 'orca' | 'herdr' | 'tmux' | 'headless'
 getMux(name) -> {
   name,
   available() -> bool,
-  spawn({ root, role, title, command, cwd, anchor }) -> { handle },   // new pane next to anchor
-  send(handle, text, { enter = true }),
-  read(handle, { lines = 60 }) -> string,
-  close(handle),
-  alive(handle) -> bool,
+  spawn({ root, role, title, command, cwd, anchor, member, adapter, autonomy, layout }) -> { handle, layout?, session? }
+  send(handle, text, { enter=true, root, role, adapter, member, taskId, autonomy, layout }),
+  read(handle, { lines=60, root }) -> string,
+  close(handle, { root, layout }),
+  alive(handle, { root }) -> bool,
 }
 ```
 
-Pane handles persist in `.moragent/runs/panes.json` as `{ role: { mux, handle, cli, startedAt } }`.
+Pane handles persist in `.moragent/runs/panes.json` as
+`{ role: { mux, handle, cli, autonomy, layout, startedAt } }`. Headless session state persists in
+`.moragent/runs/headless.json` and logs go to `.moragent/runs/<role>-<task>.log`.
+
+`mora up` writes a per-project shim in `.moragent/runs/bin/mora` (and `mora.cmd`) via
+`src/core/shim.js#ensureShim(root)` before real pane launches. Multiplexers prepend this directory to
+pane `PATH`, so an agent always calls the same MORAGENT installation. Dry runs do not create or inject
+the shim.
 
 ## 9. Task bus (backend) — `src/bus/tasks.js`
 
@@ -180,9 +193,10 @@ Task record `.moragent/tasks/T-0001.json`:
 
 Status: `queued → sent → running → done | failed | blocked`.
 Dispatch writes `.moragent/tasks/T-0001.md` (the **envelope**) and sends the agent one short line:
-`Lee y ejecuta .moragent/tasks/T-0001.md` (or English). The envelope contains: mission, task,
-spec excerpt, relevant memory (from `memory.contextPack`), acceptance criteria, and the exit
-protocol: `mora done T-0001 --summary "…" [--files a,b]` or `mora block T-0001 --reason "…"`.
+`Lee y ejecuta .moragent/tasks/T-0001.md` (or English). `mora resend <id>` rewrites the envelope and
+re-sends queued/sent tasks to the registered live pane. The envelope contains: mission, task, spec
+excerpt, relevant memory (from `memory.contextPack`), acceptance criteria, and the exit protocol:
+`mora done T-0001 --summary "…" [--files a,b]` or `mora block T-0001 --reason "…"`.
 
 ```js
 createTask({ root, title, role, body, spec, by }) -> task
@@ -211,32 +225,47 @@ Body… with [[wikilinks]] to specs, tasks, other notes.
 ```
 
 ```js
-add({ root, tier, kind, title, body, tags=[], links=[], by }) -> { id, path }
+add({ root, tier, kind, title, body, tags=[], links=[], by }) -> { id, path, note }
 list({ root, tier, limit }) -> note[]         // newest first
-recall({ root, query, tiers, limit=8 }) -> [{ note, score, snippet }]   // BM25-ish over title+tags+body
-promote({ root, id, kind }) -> note           // episodic|transient → canonical
-gc({ root, days }) -> { removed: [...] }       // transient older than N days
-contextPack({ root, role, query, budget = 6000 }) -> string   // markdown: canonical + recent episodic + recall(query)
+recall({ root, query, tiers, limit=8, includeSpecs=true }) -> [{ note, score, snippet }]
+promote({ root, id, kind }) -> note           // episodic|transient → canonical + traceability
+capture({ root, from, input }) -> note|null   // hook target; silent no-op outside a project
+getNote(root, id) -> note|null
+gc({ root, days, dryRun=false }) -> { count, removed }
+contextPack({ root, role, query, budget=6000 }) -> string   // memory + relevant specs
 ```
+
+`mora init` installs a project-local Claude `SessionEnd` hook by default in `.claude/settings.json`.
+`mora sync --hooks` installs or previews the same hook; `mora sync --hooks --global` may add Codex
+`notify` to the user-level `~/.codex/config.toml`. MORAGENT never creates project-local
+`.codex/config.toml` because Codex ignores `notify` there.
 
 ## 11. Brain (helper) — `src/brain/obsidian.js`
 
 ```js
-findVaults() -> [{ path, name }]      // parses obsidian.json (macOS/Linux/Windows locations)
-link({ root, vault, folder, mode: 'link'|'copy' }) -> { target }   // symlink .moragent into vault
-buildHome(root) -> path               // writes .moragent/Home.md MOC with wikilinks
+findVaults() -> [{ path, name }]
+link({ root, vault, folder, mode: 'link'|'copy' }) -> { target }
+buildHome(root) -> path               // writes .moragent/Home.md MOC with wikilinks and current state
 sync(root)                             // copy mode refresh + Home rebuild
+refresh(root)                          // rebuilds Home and refreshes copy-mode brain when configured
 ```
+
+Commands that change memory/task/spec state may call brain refresh so Obsidian reflects current work.
 
 ## 12. Specs (dev) — `src/spec/index.js`
 
 ```js
 PHASES = ['explore','propose','spec','design','tasks','apply','verify','archive']
 newSpec({ root, slug, title, lang }) -> dir     // from templates/spec/*.md
-specState(root, slug) -> { phase, done: [...], next }   // derived from files on disk, deterministic
+specState(root, slug) -> { phase, done: [...], next, hint }
 advance(root, slug) -> state
-tasksFromSpec(root, slug) -> [{ title, role, doneWhen }]   // parses "- [ ] T: … @role — Done when: …"
+tasksFromSpec(root, slug) -> [{ title, role, doneWhen, done }]
+archiveSpec(root, slug) -> state
+listSpecs(root) -> [{ slug, phase, done, next, hint }]
 ```
+
+State is derived from files on disk. `explore` is done once a spec exists. Placeholder task lines with
+`<…>` are ignored. Verification is detected from `## Verificación` / `## Verification` without `TODO:`.
 
 ## 13. Sync (lead) — `mora sync`
 
@@ -244,21 +273,33 @@ Regenerates managed blocks in AGENTS.md / CLAUDE.md / GEMINI.md from `templates/
 and the config, copies `.moragent/skills/*` + bundled `templates/skills/*` into every
 `skillsDirs` of every CLI used in the crew. Never touches content outside the markers.
 
+```js
+syncProject(root, cfg, { dryRun=false }) -> { files, skills, clis }
+installHooks(root, clis, { dryRun=false, global=false }) -> writtenPaths[]
+```
+
+`mora sync --hooks --dry-run` previews hook changes without writing. `mora init` calls sync and installs
+project-scoped hooks unless `--no-hooks` is passed.
+
 ## 14. User-facing commands (target surface)
 
 ```
-mora                       wizard if no project, dashboard if there is one
-mora init [--preset squad] [--lang es] [--yes]
-mora doctor                CLIs, auth hints, multiplexers, vault
-mora plan "<idea>"         scope sizing → preset + first spec
-mora up [roles…]           open panes for the crew;  mora down
-mora dispatch <role> "…"   create + send task;  mora task add|list|show
-mora done <id> --summary   worker exit protocol;  mora block <id> --reason
-mora wait <id…>            block until done/failed/blocked
-mora board                 kanban of tasks
-mora memory add|list|recall|promote|gc
+mora                                      wizard if no project, dashboard if there is one
+mora init [--preset squad] [--lang es] [--yes] [--no-hooks]
+mora doctor [--json]                      CLIs, auth hints, multiplexers, hooks, vault, project
+mora plan "<idea>"                        scope sizing → preset + first spec
+mora up [roles…] [--mux] [--with-lead] [--yolo] [--dry-run]
+mora down [roles…]
+mora dispatch <role> "…" [--spec] [--headless] [--wait] [--dry-run]
+mora resend <id>                          resend queued/sent task to its active pane
+mora task add|list|show
+mora done <id> --summary                  worker exit protocol
+mora block <id> --reason
+mora wait <id…>                           block until done/failed/blocked
+mora board                                kanban/list of tasks
+mora memory add|list|recall|promote|gc|show|capture
 mora context <role> [--query]
-mora spec new|status|next|tasks
-mora brain link|sync|open
-mora sync                  instruction files + skills for every CLI
+mora spec new|status|next|tasks|archive
+mora brain link|sync|open|status
+mora sync [--hooks [--global]] [--dry-run]
 ```

@@ -6,6 +6,7 @@ import { t } from '../core/i18n.js';
 import { json, out, info, warn } from '../core/log.js';
 import { getAdapter } from '../crew/adapters.js';
 import { loadPanes, savePanes } from '../crew/panes.js';
+import { printTrustResults, trustRoles } from '../crew/trust.js';
 import { ensureShim } from '../core/shim.js';
 import { detectMux, getMux } from '../mux/index.js';
 
@@ -24,16 +25,18 @@ export default {
   name: 'up',
   group: 'crew',
   summary: { es: 'Abre paneles para el equipo', en: 'Open panes for the crew' },
-  usage: 'mora up [roles…] [--mux orca|herdr|tmux|headless] [--with-lead] [--yolo] [--dry-run] [--json]',
+  usage: 'mora up [roles…] [--mux orca|herdr|tmux|headless] [--with-lead] [--yolo] [--trust] [--dry-run] [--json]',
   async run(argv, ctx) {
     const root = ctx.root || requireRoot();
     const cfg = ctx.config || loadConfig(root);
     const positionals = [...argv._];
     if (typeof argv.flags['with-lead'] === 'string' && cfg.crew?.[argv.flags['with-lead']]) positionals.push(argv.flags['with-lead']);
     if (typeof argv.flags.yolo === 'string' && cfg.crew?.[argv.flags.yolo]) positionals.push(argv.flags.yolo);
+    if (typeof argv.flags.trust === 'string' && cfg.crew?.[argv.flags.trust]) positionals.push(argv.flags.trust);
     const requested = positionals.length ? positionals : Object.keys(cfg.crew || {});
     const withLead = flagOn(argv.flags['with-lead']);
     const yolo = flagOn(argv.flags.yolo);
+    const acceptTrust = flagOn(argv.flags.trust);
     const leadCurrent = !withLead && requested.includes('lead') && isCurrentLead(cfg);
     const roles = requested.filter((role) => role !== 'lead' || !leadCurrent);
     for (const role of requested) if (!cfg.crew?.[role]) throw new MoragentError('UNKNOWN_ROLE', t(`Rol desconocido: ${role}`, `Unknown role: ${role}`));
@@ -81,16 +84,22 @@ export default {
       anchor = result.handle;
     }
     if (!argv.flags['dry-run']) savePanes(root, panes);
-    if (ctx.json) { json({ ok: true, mux: muxName, panes: opened, leadCurrent, dryRun: !!argv.flags['dry-run'] }); return 0; }
+    const trustable = opened.filter((item) => item.handle && ['opened', 'existing'].includes(item.status)).map((item) => item.role);
+    const trust = acceptTrust && trustable.length && !argv.flags['dry-run'] && muxName !== 'headless'
+      ? trustRoles({ root, roles: trustable, strict: false, waitMs: 3000 })
+      : [];
+    const trustComplete = trust.every((item) => item.action !== 'unknown');
+    if (ctx.json) { json({ ok: trustComplete, mux: muxName, panes: opened, trust, leadCurrent, dryRun: !!argv.flags['dry-run'] }); return trustComplete ? 0 : 3; }
     if (argv.flags['dry-run']) info(t('Simulación — no se abrió ningún panel.', 'Dry run — no pane was opened.'));
     out(t('ROL       CLI          PANEL', 'ROLE      CLI          PANE'));
     for (const item of opened) out(`${item.role.padEnd(10)} ${item.cli.padEnd(12)} ${item.handle || item.status}`);
+    if (trust.length) { out(''); printTrustResults(trust); }
     if (leadCurrent) info(t('El lead usa la terminal actual. Usa --with-lead para abrir otro panel.', 'The lead uses the current terminal. Use --with-lead to open another pane.'));
-    if (!argv.flags['dry-run'] && muxName !== 'headless' && opened.some((item) => item.status === 'opened')) {
+    if (!acceptTrust && !argv.flags['dry-run'] && muxName !== 'headless' && opened.some((item) => item.status === 'opened')) {
       info(t('Si un panel pregunta si confías en esta carpeta, acepta el diálogo antes de despachar tareas.', 'If a pane asks whether you trust this folder, accept the dialog before dispatching tasks.'));
     }
     const session = opened.find((item) => item.session)?.session;
     if (session) info(`tmux attach -t ${session}`);
-    return 0;
+    return trustComplete ? 0 : 3;
   },
 };

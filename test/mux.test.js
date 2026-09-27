@@ -10,9 +10,11 @@ import headless, { clearHeadlessCache, headlessStatePath } from '../src/mux/head
 import { readJSON, writeJSON, writeText } from '../src/core/fsx.js';
 import { ensureShim, shimDir } from '../src/core/shim.js';
 import { createTask, getTask, updateTask } from '../src/bus/tasks.js';
+import { detectTrustDialog, trustRoles } from '../src/crew/trust.js';
 import dispatchCommand from '../src/commands/dispatch.js';
 import downCommand from '../src/commands/down.js';
 import resendCommand from '../src/commands/resend.js';
+import upCommand from '../src/commands/up.js';
 import { loadPanes, savePanes } from '../src/crew/panes.js';
 
 afterEach(() => resetExec());
@@ -66,6 +68,152 @@ test('orca opens a tab without attempting split when the anchor tab already has 
   const pane = getMux('orca').spawn({ root: '/tmp/p', role: 'helper', command: 'pi', anchor: 'anchor' });
   assert.deepEqual(pane, { handle: 'term-new-tab', layout: 'tab' });
   assert.deepEqual(calls.map((call) => call[1][1]), ['list', 'create']);
+});
+
+test('trust recognizes every verified startup dialog and chooses safe keys', () => {
+  assert.deepEqual(
+    detectTrustDialog('Yes, I trust this folder\n❯ No, exit\nEnter to confirm · Esc to cancel'),
+    { kind: 'trust', cli: 'claude', keys: ['down', 'enter'] },
+  );
+  assert.deepEqual(
+    detectTrustDialog('Do you trust the contents of this directory?\n› 1. Yes, continue'),
+    { kind: 'trust', cli: 'codex', keys: ['enter'] },
+  );
+  assert.deepEqual(
+    detectTrustDialog('Update available!\n1. Update now\n2. Skip\n3. Skip until next version\nPress enter to continue'),
+    { kind: 'update', keys: ['down', 'down', 'enter'] },
+  );
+  assert.deepEqual(
+    detectTrustDialog('Do you trust the contents of this project?\n> Yes, I trust this folder'),
+    { kind: 'trust', cli: 'agy', keys: ['enter'] },
+  );
+  assert.deepEqual(
+    detectTrustDialog('→ Trust\nTrust parent folder\nTrust (this session only)\nDo not trust\n↑↓ navigate  enter select'),
+    { kind: 'trust', cli: 'pi', keys: ['enter'] },
+  );
+});
+
+test('trust skips a Codex update, accepts trust and uses raw Orca keys', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-trust-chain-'));
+  savePanes(root, { backend: { mux: 'orca', handle: 'term-backend', cli: 'codex' } });
+  const screens = [
+    ['Update available!', '› 1. Update now', '2. Skip', '3. Skip until next version', 'Press enter to continue'],
+    ['Do you trust the contents of this directory?', '› 1. Yes, continue'],
+    ['Ready', '›'],
+  ];
+  let screen = 0;
+  const sent = [];
+  setExec((cmd, args) => {
+    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ ok: true, result: { terminals: [{ handle: 'term-backend' }] } }), stderr: '' };
+    if (args[1] === 'read') return { code: 0, stdout: JSON.stringify({ ok: true, result: { terminal: { tail: screens[screen] } } }), stderr: '' };
+    if (args[1] === 'send') {
+      const text = args[args.indexOf('--text') + 1];
+      sent.push(text);
+      if (text === '\r') screen++;
+      return { code: 0, stdout: '', stderr: '' };
+    }
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  const results = trustRoles({ root, roles: ['backend'], strict: true });
+  assert.deepEqual(results, [{ role: 'backend', mux: 'orca', action: 'skipped-update+trusted', dialogs: 2 }]);
+  assert.deepEqual(sent, ['\x1b[B', '\x1b[B', '\r', '\r']);
+});
+
+test('trust never sends keys for an unknown dialog and reports its last three lines', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-trust-unknown-'));
+  savePanes(root, { helper: { mux: 'orca', handle: 'term-helper', cli: 'agy' } });
+  const calls = [];
+  setExec((cmd, args) => {
+    calls.push([cmd, args]);
+    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ terminals: [{ handle: 'term-helper' }] }), stderr: '' };
+    if (args[1] === 'read') return { code: 0, stdout: JSON.stringify({ result: { terminal: { tail: ['Choose startup mode', 'details', '❯ Custom mode', 'Enter to select'] } } }), stderr: '' };
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  const results = trustRoles({ root, roles: ['helper'], strict: true });
+  assert.equal(results[0].action, 'unknown');
+  assert.equal(results[0].detail, 'details\n❯ Custom mode\nEnter to select');
+  assert.equal(calls.some((call) => call[1][1] === 'send'), false);
+});
+
+test('trust treats a bottom empty prompt as ready even when an accepted dialog remains above', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-trust-ready-'));
+  savePanes(root, { backend: { mux: 'orca', handle: 'term-ready', cli: 'codex' } });
+  const calls = [];
+  setExec((cmd, args) => {
+    calls.push([cmd, args]);
+    if (args[1] === 'list') return { code: 0, stdout: JSON.stringify({ terminals: [{ handle: 'term-ready' }] }), stderr: '' };
+    if (args[1] === 'read') return {
+      code: 0,
+      stdout: JSON.stringify({ result: { terminal: { tail: ['Do you trust the contents of this directory?', '› 1. Yes, continue', 'Accepted', 'Ready', '›'] } } }),
+      stderr: '',
+    };
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  assert.deepEqual(trustRoles({ root, roles: ['backend'], strict: true }), [
+    { role: 'backend', mux: 'orca', action: 'ready', dialogs: 0 },
+  ]);
+  assert.equal(calls.some((call) => call[1][1] === 'send'), false);
+});
+
+test('mux trust keys use named tmux keys and raw Herdr input', () => {
+  const calls = [];
+  setExec((cmd, args) => {
+    calls.push([cmd, args]);
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  getMux('tmux').key('%7', 'down');
+  getMux('tmux').key('%7', 'enter');
+  getMux('herdr').key('pane-7', 'down');
+  getMux('herdr').key('pane-7', 'enter');
+  assert.deepEqual(calls[0], ['tmux', ['send-keys', '-t', '%7', 'Down']]);
+  assert.deepEqual(calls[1], ['tmux', ['send-keys', '-t', '%7', 'Enter']]);
+  assert.deepEqual(calls[2], ['herdr', ['pane', 'send-text', 'pane-7', '\x1b[B']]);
+  assert.deepEqual(calls[3], ['herdr', ['pane', 'send-text', 'pane-7', '\r']]);
+});
+
+test('up --trust accepts a recognized dialog after opening the pane', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-up-trust-'));
+  const bin = path.join(root, 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  for (const name of ['codex', 'tmux']) {
+    const file = path.join(bin, process.platform === 'win32' ? `${name}.cmd` : name);
+    fs.writeFileSync(file, '');
+    if (process.platform !== 'win32') fs.chmodSync(file, 0o755);
+  }
+  const previousPath = process.env.PATH;
+  const previousTmux = process.env.TMUX;
+  process.env.PATH = `${bin}${path.delimiter}${previousPath || ''}`;
+  process.env.TMUX = 'inside';
+  let accepted = false;
+  const calls = [];
+  setExec((cmd, args) => {
+    calls.push([cmd, args]);
+    if (args[0] === 'split-window') return { code: 0, stdout: '%7\n', stderr: '' };
+    if (args[0] === 'list-panes') return { code: 0, stdout: '%7\n', stderr: '' };
+    if (args[0] === 'capture-pane') return {
+      code: 0,
+      stdout: accepted ? 'Ready\n›\n' : 'Do you trust the contents of this directory?\n› 1. Yes, continue\n',
+      stderr: '',
+    };
+    if (args[0] === 'send-keys' && args.at(-1) === 'Enter') accepted = true;
+    return { code: 0, stdout: '', stderr: '' };
+  });
+  try {
+    const code = await upCommand.run(
+      { _: ['backend'], flags: { mux: 'tmux', trust: true } },
+      { root, config: { lang: 'en', mux: 'tmux', crew: { backend: { cli: 'codex', title: 'Backend' } } }, json: false },
+    );
+    assert.equal(code, 0);
+    assert.equal(accepted, true);
+    assert.equal(loadPanes(root).backend.handle, '%7');
+    assert.equal(calls.some((call) => call[0] === 'tmux' && call[1].at(-1) === 'Enter'), true);
+    assert.match(upCommand.usage, /--trust/);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousTmux === undefined) delete process.env.TMUX;
+    else process.env.TMUX = previousTmux;
+  }
 });
 
 test('orca tabs layout skips split and closes the whole tab', () => {
