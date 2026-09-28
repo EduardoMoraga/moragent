@@ -95,6 +95,7 @@ Escribe estos comandos dentro de `moragent`:
 - `/login`: conectar suscripciones o configurar claves de API
 - `/equipo` (o `/crew`): ver el equipo actual · `/equipo <rol> <motor>` para reasignar roles
 - `/orquestador <m>` (o `/orchestrator`): elegir el motor del orquestador ejecutivo
+- `/modelo [rol] <nombre>` (o `/model`): ver o cambiar el modelo del orquestador o de un rol (`/modelo sonnet`, `/modelo backend gpt-5.5`; `default` vuelve al del motor)
 - `/memoria [texto]` (o `/memory`): ver resumen de memoria o buscar notas
 - `/plan <texto>`: pedir un plan explícito con estimación y spec
 - `/abrir <rol|id>` (o `/open`): sacar un subagente a un panel externo de terminal

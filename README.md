@@ -95,6 +95,7 @@ Type these slash commands inside `moragent`:
 - `/login`: connect subscriptions or configure API keys
 - `/crew` (or `/equipo`): view the crew · `/crew <role> <engine>` to reassign roles
 - `/orchestrator <engine>` (or `/orquestador <m>`): pick the orchestrator engine
+- `/model [role] <name>` (or `/modelo`): show or change the model of the orchestrator or a role (`/model sonnet`, `/model backend gpt-5.5`; `default` goes back to the engine's own)
 - `/memory [text]` (or `/memoria [texto]`): show memory summary or search notes
 - `/plan <text>`: ask the orchestrator for an explicit plan
 - `/open <role|id>` (or `/abrir <rol|id>`): take a subagent out into an external terminal pane
