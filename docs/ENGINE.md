@@ -130,3 +130,31 @@ engine.stop()
 - Pure render function `render(state, { cols, rows, input, scroll }) -> string[]` (lines) so it is
   testable without a TTY. Colors via `src/core/log.js#c`; respects `NO_COLOR`.
 - Bilingual via `t()`; Spanish neutral (no voseo).
+
+## 6. v5.1 — chat usable (added after Edu's first real use)
+
+### 6a. Agent activity log (engine → TUI)
+`state.agents[id].log`: array (last 400) of `{ at, kind: 'text'|'tool'|'result'|'error', text }` built from §2 events
+(consecutive text deltas are merged per line). `state.agents[id].elapsedMs` updated while running.
+
+### 6b. Sessions — `src/engine/sessions.js` (owner: backend/Codex)
+Stored in `.moragent/sessions/<id>.json` (git-ignored, atomic writes, messages capped at 500).
+```js
+createSession(root, { title = '', provider = null }) -> session
+  // session = { id, title, createdAt, updatedAt, provider, providerSessionId, messages: [], agents: {} }
+saveSession(root, session) -> session          // bumps updatedAt; derives title from first user message (≤ 60 chars)
+loadSession(root, id) -> session | null         // id or unique prefix
+listSessions(root) -> [{ id, title, updatedAt, messages, provider }]   // newest first
+latestSession(root) -> session | null
+deleteSession(root, id) -> bool
+```
+Engine commands (lead): `/sesiones` (list), `/sesion <n|id>` (resume: restores messages, agents and the
+orchestrator's provider session so the model keeps its context), `/limpiar` (new empty session).
+The engine saves after every message. On start it resumes nothing automatically; the welcome says
+how many previous sessions exist and how to resume.
+
+### 6c. Markdown — `src/tui/markdown.js` (owner: helper/Antigravity)
+`renderMarkdown(text, width, { c }) -> string[]` — pure. Bold, italic, inline code, headings, bullet and
+numbered lists with hanging indent, block quotes, fenced code blocks (dim, no wrap past width: hard-wrap),
+links as `text (url)`, tables degrade to aligned rows. Every returned line has `plain(line).length <= width`.
+Never throws on malformed markdown (unclosed ** or ```).

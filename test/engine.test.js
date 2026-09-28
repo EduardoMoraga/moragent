@@ -150,3 +150,55 @@ test('first message picks the project language', async () => {
   assert.equal(guessLang('Build a task API with tests'), 'en');
   assert.equal(guessLang('API', 'es'), 'es');
 });
+
+test('appendLog merges streamed text into lines and keeps tools as entries', async () => {
+  const { appendLog } = await import('../src/engine/index.js');
+  let log = [];
+  for (const e of [
+    { type: 'text', delta: 'Leyendo el ' }, { type: 'text', delta: 'repo\nListo pa' }, { type: 'text', delta: 'ra editar' },
+    { type: 'tool', name: 'Edit', input: { file_path: 'src/a.js' } }, { type: 'tool_result', ok: true, summary: 'edited' },
+    { type: 'text', delta: 'Terminé' },
+  ]) log = appendLog(log, e);
+  assert.deepEqual(log.map((x) => `${x.kind}:${x.text}`), ['text:Leyendo el repo', 'text:Listo para editar', 'tool:Edit src/a.js', 'result:edited', 'text:Terminé']);
+  let big = [];
+  for (let i = 0; i < 500; i++) big = appendLog(big, { type: 'tool', name: `t${i}` });
+  assert.equal(big.length, 400, 'bounded');
+});
+
+test('sessions: conversation is saved, /limpiar starts fresh, /sesion restores messages and model context', async () => {
+  const root = tmp();
+  const cfg = defaultConfig({ project: 'demo', lang: 'es', preset: 'duo', clis: { lead: 'claude', backend: 'codex' } });
+  scaffold(root, cfg);
+  const calls = [];
+  const providers = fakeProviders(calls);
+  providers.getProvider('claude').run = async ({ sessionId, onEvent }) => {
+    calls.push({ who: 'orchestrator', sessionId });
+    onEvent({ type: 'text', delta: 'respuesta' });
+    return { ok: true, text: 'respuesta', sessionId: 'model-ctx-1' };
+  };
+  const engine = await createEngine({ root, config: cfg, providers });
+  await engine.send('primera pregunta');
+  await new Promise((r) => setTimeout(r, 900)); // debounced save
+  const firstId = engine.store.state.sessionId;
+  assert.ok(firstId, 'session created and saved');
+
+  await engine.command('limpiar');
+  assert.equal(engine.store.state.messages.filter((m) => m.from === 'user').length, 0);
+  await engine.command('sesiones');
+  assert.match(engine.store.state.messages.at(-1).text, /primera pregunta/);
+
+  await engine.command('sesion', ['1']);
+  assert.equal(engine.store.state.sessionId, firstId);
+  assert.ok(engine.store.state.messages.some((m) => m.text === 'primera pregunta'));
+  await engine.send('segunda');
+  assert.equal(calls.at(-1).sessionId, 'model-ctx-1', 'the orchestrator resumes its own model session');
+});
+
+test('plan parsing survives code fences and raw newlines inside task prompts', () => {
+  const text = 'Dos tareas.\n```moragent-plan\n{"size":"M","summary":"s","tasks":[{"id":"t1","role":"frontend","title":"README","prompt":"Incluye:\n```js\nimport { cToF } from \'./temp.js\'\n```\nY una tabla.","dependsOn":[]}]}\n```\nSigo después.';
+  const plan = extractPlan(text);
+  assert.ok(!plan.error, 'parsed');
+  assert.match(plan.tasks[0].prompt, /```js\nimport/);
+  assert.equal(stripPlan(text), 'Dos tareas.\n\nSigo después.');
+  assert.equal(stripPlan('Pensando…\n```moragent-plan\n{"tasks":[{"id":"t1"'), 'Pensando…', 'half-streamed plan never shows');
+});

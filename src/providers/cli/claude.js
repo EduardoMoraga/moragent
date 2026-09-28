@@ -1,6 +1,6 @@
 import { autonomyArgsFor } from '../../crew/adapters.js';
 import { cliStatus, jsonOutput } from './status.js';
-import { runStream, summary, usageEvent } from './stream.js';
+import { resultOk, runStream, summary, usageEvent } from './stream.js';
 
 export function parseClaude(record, state) {
   const events = [];
@@ -22,7 +22,7 @@ export function parseClaude(record, state) {
   if (record.type === 'user') {
     for (const block of record.message?.content || []) {
       if (block.type === 'tool_result') events.push({
-        type: 'tool_result', id: block.tool_use_id, ok: !block.is_error, summary: summary(block.content),
+        type: 'tool_result', id: block.tool_use_id, ok: resultOk(block), summary: summary(block.content),
       });
     }
   }

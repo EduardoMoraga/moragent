@@ -29,6 +29,7 @@ const GITIGNORE = `# MORAGENT — local-only state
 memory/transient/
 context/
 runs/
+sessions/
 `;
 
 export function scaffold(root, cfg) {

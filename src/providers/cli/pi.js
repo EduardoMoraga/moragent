@@ -1,6 +1,6 @@
 import { autonomyArgsFor } from '../../crew/adapters.js';
 import { cliStatus, jsonOutput } from './status.js';
-import { runStream, summary, usageEvent } from './stream.js';
+import { resultOk, runStream, summary, usageEvent } from './stream.js';
 
 const textFrom = (message) => (message?.content || [])
   .filter((part) => part.type === 'text')
@@ -27,7 +27,7 @@ export function parsePi(record, state) {
     type: 'tool', id: record.toolCallId || record.id, name: record.toolName || record.name, input: record.args || {},
   });
   if (record.type === 'tool_execution_end') events.push({
-    type: 'tool_result', id: record.toolCallId || record.id, ok: !record.isError,
+    type: 'tool_result', id: record.toolCallId || record.id, ok: resultOk(record),
     summary: summary(record.result || record.error),
   });
   if (record.type === 'message_end' && record.message?.role === 'assistant') {

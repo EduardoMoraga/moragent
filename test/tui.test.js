@@ -52,7 +52,7 @@ test('sidebar agents include id, short title, lastLine and running spinner', () 
   assert.ok(joined.includes('backend'));
   assert.ok(joined.includes('API larga'));
   assert.ok(joined.includes('Ejecutando pruebas unitarias'));
-  assert.ok(/[◐◓◑◒]/.test(joined));
+  assert.ok(joined.includes('●'));
 });
 
 test('line editor edits, history and completes slash commands', () => {
@@ -76,7 +76,43 @@ test('decode keys from raw mode sequences', () => {
   assert.equal(decodeKey('\u001b[A').name, 'up');
   assert.equal(decodeKey('\u001b[5~').name, 'pageup');
   assert.equal(decodeKey('\u0003').name, 'ctrl-c');
+  assert.equal(decodeKey('\u0002').name, 'ctrl-b');
+  assert.equal(decodeKey('\u001b[1;2A').name, 'shift-up');
+  assert.equal(decodeKey('\u001b[<64;10;10M').name, 'wheel-up');
   assert.deepEqual(decodeKeys('/salir\r').map((k) => k.name), ['text', 'text', 'text', 'text', 'text', 'text', 'enter']);
+});
+
+test('render agent cards, markdown, narrow status and new message indicator', () => {
+  const state = sampleState();
+  state.messages.push({ id: 'md', from: 'orchestrator', text: '**Plan**\n- uno\n- dos', at: Date.now() });
+  state.agents['T-0001'] = { id: 'T-0001', role: 'backend', provider: 'codex', status: 'running', taskId: 'T-0001', title: 'API', elapsedMs: 72_000, log: [{ kind: 'text', text: '**listo** `npm test`' }, { kind: 'tool', text: '**listo** `npm test`' }, { kind: 'tool', text: '- ejecutando verificación' }] };
+  const lines = render(state, { cols: 70, rows: 24, scroll: 1, newCount: 3 });
+  const joined = plain(lines.join('\n'));
+  assert.ok(joined.includes('backend ● 1m12s'));
+  assert.ok(joined.includes('backend · codex · T-0001 · 1m12s'));
+  assert.ok(!joined.includes('T-0001 · codex · T-0001'));
+  assert.ok(!joined.includes('**listo**'));
+  assert.ok(!joined.includes('`npm test`'));
+  assert.equal((joined.match(/listo npm test/g) || []).length, 1);
+  assert.ok(joined.includes('• uno'));
+  assert.ok(joined.includes('↓ 3 nuevos · End'));
+  assert.ok(lines.every((l) => plain(l).length <= 70));
+});
+
+test('render agents and sessions overlays', () => {
+  const state = sampleState();
+  state.root = '/Users/eduardo/app';
+  state.agents.backend = { id: 'backend', role: 'backend', provider: 'codex', status: 'done', taskId: 'T-0001', title: 'API', log: [{ kind: 'text', text: '/Users/eduardo/app/src/api/routes.js ' + 'a'.repeat(80) }] };
+  let lines = render(state, { cols: 80, rows: 24, overlay: { type: 'agents', selected: 0, scroll: 0 } });
+  let joined = plain(lines.join('\n'));
+  assert.ok(joined.includes('Agentes'));
+  assert.ok(joined.includes('backend'));
+  assert.ok(joined.includes('src/api/routes.js'));
+  assert.ok(!joined.includes('/Users/eduardo/app/src/api/routes.js'));
+  lines = render(state, { cols: 80, rows: 24, overlay: { type: 'sessions', selected: 0 } });
+  joined = plain(lines.join('\n'));
+  assert.ok(joined.includes('Sesiones'));
+  assert.ok(joined.includes('API de tareas con tests'));
 });
 
 test('login overlay renders and sends masked api key', async () => {

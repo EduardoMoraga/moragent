@@ -1,6 +1,14 @@
 import { autonomyArgsFor } from '../../crew/adapters.js';
 import { cliStatus } from './status.js';
-import { runStream, summary, usageEvent } from './stream.js';
+import { resultOk, runStream, summary, usageEvent } from './stream.js';
+
+const textFromItem = (item) => {
+  if (item.type === 'agent_message') return item.text || '';
+  if (item.type !== 'reasoning') return '';
+  if (typeof item.text === 'string') return item.text;
+  if (Array.isArray(item.summary)) return item.summary.map((part) => part?.text || part || '').join('');
+  return '';
+};
 
 export function parseCodex(record, state) {
   const events = [];
@@ -10,21 +18,24 @@ export function parseCodex(record, state) {
   }
   if (record.type === 'item.completed') {
     const item = record.item || {};
-    if (item.type === 'agent_message') events.push({ type: 'text', delta: item.text || '' });
+    // Codex also reports the input as a user_message item. It can contain the full task envelope,
+    // but it is not assistant output and must never be rendered in the agent activity stream.
+    const text = textFromItem(item);
+    if (text) events.push({ type: 'text', delta: text });
     if (item.type === 'command_execution') {
       events.push({ type: 'tool', id: item.id, name: 'command', input: { command: item.command || '' } });
       events.push({
-        type: 'tool_result', id: item.id, ok: item.status === 'completed' || item.exit_code === 0,
+        type: 'tool_result', id: item.id, ok: resultOk(item),
         summary: summary(item.aggregated_output || item.output || item.status),
       });
     }
     if (item.type === 'file_change') {
       events.push({ type: 'tool', id: item.id, name: 'file_change', input: item.changes || {} });
-      events.push({ type: 'tool_result', id: item.id, ok: item.status !== 'failed', summary: summary(item.status || item.changes) });
+      events.push({ type: 'tool_result', id: item.id, ok: resultOk(item), summary: summary(item.status || item.changes) });
     }
     if (item.type === 'mcp_tool_call') {
       events.push({ type: 'tool', id: item.id, name: item.tool || item.name, input: item.arguments || {} });
-      if (item.status) events.push({ type: 'tool_result', id: item.id, ok: item.status !== 'failed', summary: summary(item.result || item.status) });
+      if (item.status) events.push({ type: 'tool_result', id: item.id, ok: resultOk(item), summary: summary(item.result || item.status) });
     }
   }
   if (record.type === 'turn.completed') {

@@ -1,22 +1,32 @@
 import { t } from '../core/i18n.js';
 
-export const SLASH_COMMANDS = ['/login', '/plan', '/equipo', '/orquestador', '/memoria', '/abrir', '/nuevo', '/cancel', '/help', '/salir'];
+export const SLASH_COMMANDS = ['/login', '/plan', '/equipo', '/orquestador', '/memoria', '/abrir', '/agentes', '/sesiones', '/sesion', '/limpiar', '/nuevo', '/cancel', '/help', '/salir'];
 
 export function decodeKey(buf) {
   const s = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
   if (s === '\r' || s === '\n') return { name: 'enter' };
   if (s === '\u0003') return { name: 'ctrl-c' };
+  if (s === '\u0002') return { name: 'ctrl-b' };
   if (s === '\u001b') return { name: 'escape' };
   if (s === '\t') return { name: 'tab' };
   if (s === '\u007f' || s === '\b') return { name: 'backspace' };
   if (s === '\u001b[A') return { name: 'up' };
   if (s === '\u001b[B') return { name: 'down' };
+  if (s === '\u001b[1;2A') return { name: 'shift-up' };
+  if (s === '\u001b[1;2B') return { name: 'shift-down' };
   if (s === '\u001b[C') return { name: 'right' };
   if (s === '\u001b[D') return { name: 'left' };
   if (s === '\u001b[H' || s === '\u001bOH') return { name: 'home' };
   if (s === '\u001b[F' || s === '\u001bOF') return { name: 'end' };
   if (s === '\u001b[5~') return { name: 'pageup' };
   if (s === '\u001b[6~') return { name: 'pagedown' };
+  const mouse = /^\u001b\[<(\d+);(\d+);(\d+)([mM])$/.exec(s);
+  if (mouse) {
+    const code = Number(mouse[1]);
+    if (code === 64) return { name: 'wheel-up' };
+    if (code === 65) return { name: 'wheel-down' };
+    return { name: 'mouse', code, x: Number(mouse[2]), y: Number(mouse[3]), up: mouse[4] === 'm' };
+  }
   if (s === '\u001bb' || s === '\u001b[1;5D') return { name: 'word-left' };
   if (s === '\u001bf' || s === '\u001b[1;5C') return { name: 'word-right' };
   if (s >= ' ' && s !== '\u007f') return { name: 'text', value: s };

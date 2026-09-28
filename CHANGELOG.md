@@ -1,5 +1,24 @@
 # Changelog
 
+## [5.1.0] - 2026-09-27
+
+A usable chat, after the first real use.
+
+### Added
+- Live agent cards in the chat: role, engine, task, elapsed time and last activity, updated in place.
+- Process view (Tab or `/agentes`): each subagent's full activity — text, tool calls, commands, results — scrollable.
+- Scrollback: mouse wheel, PgUp/PgDn, Shift+↑/↓, End; the view stays put while you read and shows how many new messages arrived.
+- Markdown rendering (bold, lists, code blocks, headings, links, tables) sized to the terminal.
+- Sessions: every conversation is saved; `/sesiones` lists them, `/sesion <n>` resumes one with the orchestrator's model context, `/limpiar` starts fresh.
+- Sidebar toggle (Ctrl+B) at any width; a real status bar with each agent's state on narrow terminals.
+- `/nuevo` creates a separate project in the current folder.
+
+### Fixed
+- Plans whose task prompts contain code fences or raw newlines are parsed correctly; a malformed plan gets one automatic repair round.
+- The orchestrator knows it runs inside the app and points to in-app commands instead of shell commands.
+- Project discovery stops at the enclosing git repository (a repo without `.moragent/` no longer joins a workspace project above it).
+- Labels follow the project language; single prompt glyph.
+
 ## [5.0.0] - 2026-09-27
 
 MORAGENT becomes a native terminal app. v4 drove other CLIs in visible panes; v5 runs them inside.

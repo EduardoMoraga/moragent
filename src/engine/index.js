@@ -67,6 +67,34 @@ export function guessLang(text, fallback = 'en') {
   return es > en ? 'es' : en > es ? 'en' : fallback;
 }
 
+const LOG_MAX = 400;
+
+// Fold one normalized event into an agent's activity log: text deltas are merged into the current
+// line, tools and results get their own entries.
+export function appendLog(log = [], e) {
+  const at = new Date().toISOString();
+  const next = log.slice(-LOG_MAX);
+  if (e.type === 'text') {
+    const parts = String(e.delta || '').split('\n');
+    const last = next[next.length - 1];
+    if (last && last.kind === 'text' && !last.closed) {
+      next[next.length - 1] = { ...last, text: last.text + parts[0] };
+    } else if (parts[0]) next.push({ at, kind: 'text', text: parts[0] });
+    for (const part of parts.slice(1)) {
+      if (next.length) next[next.length - 1] = { ...next[next.length - 1], closed: true };
+      next.push({ at, kind: 'text', text: part });
+    }
+  } else if (e.type === 'tool') {
+    const target = e.input?.file_path || e.input?.path || e.input?.command || '';
+    next.push({ at, kind: 'tool', text: `${e.name}${target ? ` ${String(target).slice(0, 160)}` : ''}` });
+  } else if (e.type === 'tool_result') {
+    next.push({ at, kind: e.ok === false ? 'error' : 'result', text: String(e.summary || (e.ok === false ? 'error' : 'ok')).slice(0, 200) });
+  } else if (e.type === 'done' && e.ok === false && e.error) {
+    next.push({ at, kind: 'error', text: String(e.error).slice(0, 300) });
+  }
+  return next.filter((x) => x.kind !== 'text' || x.text.trim()).slice(-LOG_MAX);
+}
+
 const blockedText = (text) => /^\s*(BLOQUEADO|BLOCKED)\s*:/i.test(text || '');
 
 // `providers` ({ listProviders, getProvider }) is injectable for tests; defaults to src/providers.
@@ -94,6 +122,36 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
   let reviewRounds = 0;
 
   const engine = { store, get root() { return root; }, get config() { return config; } };
+
+  // ---------- sessions: every conversation is saved and can be resumed ----------
+  let sessionsMod = await optional('./sessions.js');
+  let current = null;
+  const listSaved = () => (root && sessionsMod?.listSessions ? sessionsMod.listSessions(root) : []);
+  store.set({ sessions: listSaved(), sessionId: null });
+  let saveTimer = null;
+  const persist = () => {
+    if (!root || !sessionsMod?.saveSession) return;
+    if (!store.state.messages.some((m) => m.from === 'user')) return;
+    if (!current) current = sessionsMod.createSession(root, { provider: store.state.orchestrator.provider });
+    current.messages = store.state.messages.map((m) => ({ ...m, streaming: false }));
+    current.agents = Object.fromEntries(Object.entries(store.state.agents).map(([k, a]) => [k, { ...a, log: (a.log || []).slice(-80) }]));
+    current.provider = session.provider || store.state.orchestrator.provider;
+    current.providerSessionId = session.id;
+    current = sessionsMod.saveSession(root, current) || current;
+    if (store.state.sessionId !== current.id) store.set({ sessionId: current.id });
+  };
+  store.on('change', () => {
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => { saveTimer = null; try { persist(); } catch { /* saving must never break the chat */ } }, 800);
+    saveTimer.unref?.();
+  });
+  const ago = (iso) => {
+    const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
+    if (min < 1) return t('recién', 'just now');
+    if (min < 60) return t(`hace ${min} min`, `${min} min ago`);
+    const h = Math.round(min / 60);
+    return h < 24 ? t(`hace ${h} h`, `${h} h ago`) : t(`hace ${Math.round(h / 24)} d`, `${Math.round(h / 24)} d ago`);
+  };
 
   engine.refreshProviders = async () => {
     providersMod = providersMod || await optional('../providers/index.js');
@@ -206,7 +264,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
           if (e.type === 'text') text += e.delta;
           const cur = store.state.agents[task.id];
           const line = lastLineFrom(e, cur?.lastLine);
-          if (line !== cur?.lastLine) store.setAgent(task.id, { lastLine: line });
+          store.setAgent(task.id, { lastLine: line, log: appendLog(cur?.log, e) });
         },
       });
     } catch (e) {
@@ -227,7 +285,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
       updateTask(root, task.id, { status, result: summary.slice(0, 4000) });
     }
     if (res?.sessionId) store.setAgent(task.id, { sessionId: res.sessionId });
-    store.setAgent(task.id, { status, endedAt: new Date().toISOString(), lastLine: summary.split('\n').filter(Boolean).pop()?.slice(0, 120) || status });
+    store.setAgent(task.id, { status, endedAt: new Date().toISOString(), elapsedMs: Date.now() - Date.parse(store.state.agents[task.id]?.startedAt || new Date().toISOString()), lastLine: summary.split('\n').filter(Boolean).pop()?.slice(0, 120) || status });
     const memory = closedByWorker ? null : await optional('../memory/index.js');
     try {
       memory?.add?.({ root, tier: 'episodic', kind: 'episode', title: `${task.id}: ${task.title}`, body: summary || status, tags: [task.role, planTask.provider], links: [task.id, task.spec].filter(Boolean), by: task.role });
@@ -249,6 +307,12 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
       store.setAgent(task.id, { id: task.id, role: pt.role, provider: pt.provider, status: 'queued', taskId: task.id, title: pt.title, lastLine: pt.dependsOn.length ? t(`espera ${pt.dependsOn.join(', ')}`, `waits for ${pt.dependsOn.join(', ')}`) : t('en cola', 'queued') });
     }
     store.set({ orchestrator: { ...store.state.orchestrator, status: 'running' } });
+    const ticker = setInterval(() => {
+      for (const a of Object.values(store.state.agents)) {
+        if (a.status === 'running' && a.startedAt) store.setAgent(a.id, { elapsedMs: Date.now() - Date.parse(a.startedAt) });
+      }
+    }, 1000);
+    ticker.unref?.();
     const results = {};
     const running = new Map();
     const pending = new Set(Object.keys(byPlanId));
@@ -273,15 +337,21 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
       if (running.size) await Promise.race(running.values());
       else if (pending.size) break; // unreachable dependencies
     }
+    clearInterval(ticker);
     store.set({ orchestrator: { ...store.state.orchestrator, status: 'idle' } });
     return Object.values(results);
   }
 
-  async function handleAnswer(text) {
+  async function handleAnswer(text, { retried = false } = {}) {
     const plan = text && extractPlan(text);
     if (!plan) return;
     if (plan.error) {
-      store.addMessage({ from: 'system', text: t('El orquestador propuso un plan con formato inválido; pídele que lo reformule.', 'The orchestrator proposed a malformed plan; ask it to rephrase.') });
+      if (!retried) {
+        // One automatic repair round: the model re-emits only the block, the person does nothing.
+        const again = await orchestratorTurn(t('Tu bloque moragent-plan no es JSON válido. Reemítelo completo y válido (escapa comillas y saltos de línea dentro de los strings), sin repetir la explicación.', 'Your moragent-plan block is not valid JSON. Re-emit it complete and valid (escape quotes and newlines inside strings), without repeating the explanation.'));
+        return handleAnswer(again, { retried: true });
+      }
+      store.addMessage({ from: 'system', text: t('El orquestador no logró armar un plan válido. Reformula el pedido o divídelo en partes.', 'The orchestrator could not produce a valid plan. Rephrase the request or split it.') });
       return;
     }
     store.addMessage({ from: 'system', text: t(`Plan ${plan.size || ''} · ${plan.tasks.length} subagente(s): ${plan.summary}`, `Plan ${plan.size || ''} · ${plan.tasks.length} subagent(s): ${plan.summary}`) });
@@ -375,6 +445,46 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
       case 'abrir': case 'open':
         await openPane(list[0]);
         return;
+      case 'sesiones': case 'sessions': {
+        sessionsMod = sessionsMod || await optional('./sessions.js');
+        const all = listSaved();
+        store.set({ sessions: all });
+        store.addMessage({ from: 'system', text: all.length
+          ? `${t('Sesiones', 'Sessions')} (/sesion <n>):\n${all.slice(0, 15).map((x, i) => `${i + 1}. ${x.title || t('(sin título)', '(untitled)')} — ${ago(x.updatedAt)} · ${x.messages} ${t('mensajes', 'messages')}${x.id === store.state.sessionId ? t(' · actual', ' · current') : ''}`).join('\n')}`
+          : t('Todavía no hay sesiones guardadas.', 'No saved sessions yet.') });
+        return;
+      }
+      case 'sesion': case 'session': {
+        const all = listSaved();
+        const ref = list[0];
+        const pick = /^\d+$/.test(ref || '') ? all[Number(ref) - 1] : all.find((x) => x.id === ref || x.id.startsWith(ref || '-'));
+        const loaded = pick && sessionsMod?.loadSession?.(root, pick.id);
+        if (!loaded) { store.addMessage({ from: 'system', text: t('Uso: /sesion <número> (ver /sesiones)', 'Usage: /session <number> (see /sessions)') }); return; }
+        persist();
+        current = loaded;
+        session = { id: loaded.providerSessionId || null, provider: loaded.provider || null };
+        store.set({
+          messages: loaded.messages || [], agents: loaded.agents || {}, sessionId: loaded.id,
+          orchestrator: { ...store.state.orchestrator, provider: loaded.provider || store.state.orchestrator.provider, status: 'idle' },
+        });
+        store.addMessage({ from: 'system', text: t(`Sesión retomada: ${loaded.title || loaded.id}. El orquestador conserva su contexto.`, `Session resumed: ${loaded.title || loaded.id}. The orchestrator keeps its context.`) });
+        return;
+      }
+      case 'limpiar': case 'clear': {
+        persist();
+        current = null;
+        session = { id: null, provider: null };
+        store.set({ messages: [], agents: {}, sessionId: null, sessions: listSaved() });
+        engine.welcome();
+        return;
+      }
+      case 'agentes': case 'agents': {
+        const agents = Object.values(store.state.agents);
+        store.addMessage({ from: 'system', text: agents.length
+          ? agents.map((a) => `${a.id} ${a.role} (${a.provider}) — ${a.status}${a.lastLine ? `: ${a.lastLine}` : ''}`).join('\n') + t('\nTab abre el detalle de cada proceso.', '\nTab opens each process in detail.')
+          : t('Todavía no hay agentes en esta sesión.', 'No agents in this session yet.') });
+        return;
+      }
       case 'nuevo': case 'new': {
         // Start a separate project in the current folder instead of the one found above it.
         if (root && path.resolve(root) === path.resolve(cwd)) { store.addMessage({ from: 'system', text: t('Esta carpeta ya es el proyecto actual.', 'This folder already is the current project.') }); return; }
@@ -432,6 +542,8 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /orquestador <m>  elegir el motor del orquestador
 /memoria [texto]  ver o buscar en la memoria
 /nuevo            crear un proyecto nuevo en esta carpeta
+/sesiones         ver conversaciones guardadas · /sesion <n> retomar · /limpiar empezar de cero
+/agentes          estado de los subagentes (Tab: detalle de cada proceso)
 /plan <texto>     pedir un plan explícito
 /abrir <rol|id>   sacar un subagente a un panel externo
 /cancel           cancelar lo que está corriendo
@@ -441,6 +553,8 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /orchestrator <e> pick the orchestrator engine
 /memory [text]    show or search memory
 /new              create a new project in this folder
+/sessions         saved conversations · /session <n> resume · /clear start fresh
+/agents           subagent status (Tab: each process in detail)
 /plan <text>      ask for an explicit plan
 /open <role|id>   take a subagent out into a terminal pane
 /cancel           cancel running work
@@ -451,10 +565,12 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
   engine.welcome = () => {
     const ready = store.state.providers.filter((p) => p.ready).map((p) => p.label);
     const conn = ready.length ? t(`Conectado: ${ready.join(', ')}.`, `Connected: ${ready.join(', ')}.`) : t('Ningún motor conectado: usa /login.', 'No engine connected: use /login.');
+    const saved = (store.state.sessions || []).length;
+    const resumeHint = saved ? t(`\n${saved} sesión(es) anterior(es): /sesiones para verlas.`, `\n${saved} previous session(s): /sessions to see them.`) : '';
     const elsewhere = root && path.resolve(root) !== path.resolve(cwd);
     const where = elsewhere ? t(` (en ${root}; para un proyecto nuevo en esta carpeta usa /nuevo)`, ` (in ${root}; for a new project in this folder use /new)`) : '';
     store.addMessage({ from: 'orchestrator', text: root
-      ? t(`${conn}\nProyecto ${config.project}${where}. ¿Qué hacemos? (/help para ver comandos)`, `${conn}\nProject ${config.project}${where}. What are we doing? (/help for commands)`)
+      ? t(`${conn}\nProyecto ${config.project}${where}. ¿Qué hacemos? (/help para ver comandos)${resumeHint}`, `${conn}\nProject ${config.project}${where}. What are we doing? (/help for commands)${resumeHint}`)
       : t(`${conn}\nEsta carpeta todavía no es un proyecto MORAGENT. Cuéntame qué quieres construir y lo preparo.`, `${conn}\nThis folder is not a MORAGENT project yet. Tell me what you want to build and I will set it up.`) });
   };
   return engine;

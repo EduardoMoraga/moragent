@@ -1,6 +1,6 @@
 import { autonomyArgsFor } from '../../crew/adapters.js';
 import { cliStatus } from './status.js';
-import { runStream, summary, usageEvent } from './stream.js';
+import { resultOk, runStream, summary, usageEvent } from './stream.js';
 
 export function parseAgy(record, state) {
   const events = [];
@@ -20,7 +20,7 @@ export function parseAgy(record, state) {
     });
     if (update.step_type === 'tool_call' && update.state === 'DONE') events.push({
       type: 'tool_result', id: update.step_id || String(update.step_index),
-      ok: !update.error, summary: summary(update.output || update.error || update.state),
+      ok: resultOk(update), summary: summary(update.output || update.error || update.state),
     });
   }
   if (record.event === 'result') {

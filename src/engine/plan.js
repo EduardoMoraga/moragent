@@ -4,18 +4,56 @@
 // { "size": "M", "summary": "…", "tasks": [
 //   { "id": "t1", "role": "backend", "title": "…", "prompt": "…", "doneWhen": "…", "dependsOn": [] } ] }
 // ```
-const FENCE = /```moragent-plan\s*\n([\s\S]*?)```/i;
+const OPEN = /```moragent-plan[^\n]*\n?/i;
+
+// Locate the plan block by matching braces (string-aware) instead of the closing fence: task
+// prompts often contain their own ``` code examples, which would end a naive fenced match early.
+function locate(text) {
+  const src = String(text || '');
+  const open = src.match(OPEN);
+  if (!open) return null;
+  const from = open.index + open[0].length;
+  const first = src.indexOf('{', from);
+  if (first < 0) return { start: open.index, end: src.length, json: null };
+  let depth = 0; let inStr = false; let esc = false; let out = '';
+  for (let i = first; i < src.length; i++) {
+    const ch = src[i];
+    if (inStr) {
+      if (esc) { esc = false; out += ch; continue; }
+      if (ch === '\\') { esc = true; out += ch; continue; }
+      if (ch === '"') inStr = false;
+      // Models sometimes put raw newlines/tabs inside JSON strings; escape them instead of failing.
+      out += ch === '\n' ? '\\n' : ch === '\r' ? '' : ch === '\t' ? '\\t' : ch;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    out += ch;
+    if (depth === 0) {
+      const close = src.slice(i + 1).match(/^\s*```/);
+      return { start: open.index, end: i + 1 + (close ? close[0].length : 0), json: out };
+    }
+  }
+  return { start: open.index, end: src.length, json: null };
+}
 
 export function extractPlan(text) {
-  const m = String(text || '').match(FENCE);
-  if (!m) return null;
+  const found = locate(text);
+  if (!found) return null;
+  if (!found.json) return { error: 'invalid-json' };
   let raw;
-  try { raw = JSON.parse(m[1]); } catch { return { error: 'invalid-json' }; }
+  try { raw = JSON.parse(found.json); } catch { return { error: 'invalid-json' }; }
   return normalizePlan(raw);
 }
 
-// The prose the user sees, without the machine-readable block.
-export const stripPlan = (text) => String(text || '').replace(FENCE, '').replace(/\n{3,}/g, '\n\n').trim();
+// The prose the user sees, without the machine-readable block (even when it is still streaming).
+export function stripPlan(text) {
+  const found = locate(text);
+  const src = String(text || '');
+  const out = found ? src.slice(0, found.start) + src.slice(found.end) : src;
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
 
 export function normalizePlan(raw) {
   if (!raw || !Array.isArray(raw.tasks) || !raw.tasks.length) return { error: 'no-tasks' };

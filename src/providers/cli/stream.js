@@ -20,6 +20,39 @@ export const usageEvent = (usage = {}, costUsd = null) => ({
   costUsd: costUsd ?? usage.cost_usd ?? usage.cost?.total ?? null,
 });
 
+const objectValues = (value) => {
+  if (!value || typeof value !== 'object') return [];
+  return [value, value.result, value.output, value.metadata, value.details]
+    .filter((entry) => entry && typeof entry === 'object');
+};
+
+// Vendor tool events disagree on field casing and sometimes expose a terminal status alongside
+// an exit code. The exit code is authoritative for commands; an explicit error/success flag comes
+// next, then the terminal status. This keeps a completed command with exit code 0 out of the error
+// path while still treating a non-zero exit as failed even if the surrounding step is "done".
+export const resultOk = (value, fallback = true) => {
+  const values = objectValues(value);
+  for (const entry of values) {
+    const raw = entry.exit_code ?? entry.exitCode ?? entry.code;
+    if (raw !== undefined && raw !== null && raw !== '') {
+      const code = Number(raw);
+      if (Number.isFinite(code)) return code === 0;
+    }
+  }
+  for (const entry of values) {
+    const isError = entry.is_error ?? entry.isError;
+    if (typeof isError === 'boolean') return !isError;
+    if (typeof entry.success === 'boolean') return entry.success;
+    if (entry.error) return false;
+  }
+  for (const entry of values) {
+    const status = String(entry.status ?? '').trim().toLowerCase();
+    if (['completed', 'success', 'succeeded', 'ok'].includes(status)) return true;
+    if (['failed', 'failure', 'error', 'errored', 'cancelled', 'canceled', 'timed_out', 'timeout'].includes(status)) return false;
+  }
+  return fallback;
+};
+
 function prepareLog(logFile) {
   if (!logFile) return () => {};
   fs.mkdirSync(path.dirname(logFile), { recursive: true });
@@ -141,4 +174,3 @@ export async function runStream({
 
   return result;
 }
-

@@ -63,6 +63,13 @@ for (const id of ['claude', 'codex', 'agy', 'pi']) {
     assert.equal(events.filter((event) => event.type === 'done').length, 1);
     assert.ok(events.some((event) => event.type === 'text' && event.delta.includes('ok')));
     assert.ok(events.some((event) => event.type === 'usage'));
+    assert.deepEqual(
+      events.filter((event) => event.type === 'tool_result').map((event) => event.ok),
+      [true, false],
+    );
+    if (id === 'codex') {
+      assert.equal(events.some((event) => event.type === 'text' && event.delta.includes('Misión del rol')), false);
+    }
   });
 }
 
