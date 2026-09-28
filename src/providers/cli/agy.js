@@ -1,6 +1,7 @@
 import { autonomyArgsFor } from '../../crew/adapters.js';
 import { cliStatus } from './status.js';
 import { resultOk, runStream, summary, usageEvent } from './stream.js';
+import { makeCliModelLister, parseTabModels, suggestedModels } from './models.js';
 
 export function parseAgy(record, state) {
   const events = [];
@@ -43,11 +44,17 @@ const status = cliStatus({
 // Agy exposes no auth subcommand; launching its TUI starts the login flow when needed.
 export const loginCommand = ['agy'];
 
+export const listModels = makeCliModelLister({
+  key: 'agy', command: 'agy', args: ['models'], parse: parseTabModels,
+  fallback: suggestedModels(['gemini-3.1-pro-high', 'gemini-3-flash']),
+});
+
 export const agy = {
   id: 'agy',
   label: 'Antigravity',
   kind: 'subscription',
   loginCommand,
+  listModels,
   status,
   async run(options) {
     const prompt = options.system ? `${options.system}\n\n${options.prompt}` : options.prompt;

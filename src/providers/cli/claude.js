@@ -1,6 +1,7 @@
 import { autonomyArgsFor } from '../../crew/adapters.js';
 import { cliStatus, jsonOutput } from './status.js';
 import { resultOk, runStream, summary, usageEvent } from './stream.js';
+import { makeCliModelLister, suggestedModels } from './models.js';
 
 export function parseClaude(record, state) {
   const events = [];
@@ -47,11 +48,18 @@ const status = cliStatus({
 
 export const loginCommand = ['claude', 'auth', 'login'];
 
+// Claude Code exposes aliases through --help, but no non-interactive model-list command.
+export const listModels = makeCliModelLister({
+  key: 'claude',
+  fallback: suggestedModels(['opus', 'sonnet', 'haiku', 'fable']),
+});
+
 export const claude = {
   id: 'claude',
   label: 'Claude Code',
   kind: 'subscription',
   loginCommand,
+  listModels,
   status,
   async run(options) {
     const args = [

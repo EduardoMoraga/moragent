@@ -1,6 +1,7 @@
 import { autonomyArgsFor } from '../../crew/adapters.js';
 import { cliStatus, jsonOutput } from './status.js';
 import { resultOk, runStream, summary, usageEvent } from './stream.js';
+import { makeCliModelLister, parsePiModels, suggestedModels } from './models.js';
 
 const textFrom = (message) => (message?.content || [])
   .filter((part) => part.type === 'text')
@@ -58,11 +59,17 @@ const status = cliStatus({
 // where /login is available; passing `/login` as argv would send it as a model prompt.
 export const loginCommand = ['pi'];
 
+export const listModels = makeCliModelLister({
+  key: 'pi', command: 'pi', args: ['--list-models'], parse: parsePiModels,
+  fallback: suggestedModels(['openai-codex/gpt-5.5']),
+});
+
 export const pi = {
   id: 'pi',
   label: 'Pi',
   kind: 'subscription',
   loginCommand,
+  listModels,
   status,
   async run(options) {
     const args = [

@@ -1,5 +1,23 @@
 # Changelog
 
+## [5.2.0] - 2026-09-27
+
+MORAGENT now behaves like a terminal tool (Claude Code / Codex style), after real use feedback.
+
+### Changed
+- Inline terminal UI replaces the full-screen box: everything is printed to the normal terminal scrollback (native scroll, selection and copy; history stays after exit). A live region at the bottom shows running agents, the input box and a status line.
+- Logo and a three-line welcome: project, orchestrator engine and model, connected engines, how to start.
+- Language follows the macOS system language when the shell locale is English.
+
+### Added
+- Slash menu: typing `/` lists every command with a one-line description, filtered as you type; Enter runs the highlighted one.
+- Pickers: `/orquestador` lists engines with their status, then that engine's models; `/modelo` and `/modelo <rol>` list the right engine's models (real catalogs where the CLI can list them, marked suggestions otherwise).
+- `/tarea <rol> <texto>` (alias `/desplegar`) deploys one agent directly, with a role picker.
+
+### Fixed
+- Codex as orchestrator: session resume put `-s` after `resume`, which Codex rejects; exec options now precede the subcommand (verified live).
+- Subagents answer in the project language; agent summaries are cut on line boundaries.
+
 ## [5.1.1] - 2026-09-27
 
 ### Added

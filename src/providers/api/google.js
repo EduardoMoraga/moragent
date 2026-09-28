@@ -2,6 +2,7 @@ import { getGeminiTools } from './tools.js';
 import { runApiLoop } from './loop.js';
 import { getKey } from '../credentials.js';
 import { t } from '../../core/i18n.js';
+import { makeApiModelLister, suggestedApiModels } from './models.js';
 
 export const googleAdapter = {
   id: 'google',
@@ -110,10 +111,29 @@ export const googleAdapter = {
   },
 };
 
+export const listModels = makeApiModelLister({
+  key: 'google',
+  request: () => {
+    const apiKey = getKey('google');
+    return apiKey ? {
+      url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+    } : null;
+  },
+  parse: (json) => (json.models || [])
+    .filter((model) => !model.supportedGenerationMethods
+      || model.supportedGenerationMethods.includes('generateContent'))
+    .map((model) => ({
+      id: String(model.name || '').replace(/^models\//, ''),
+      label: model.displayName || String(model.name || '').replace(/^models\//, ''),
+    })),
+  fallback: suggestedApiModels(['gemini-2.0-flash']),
+});
+
 export const google = {
   id: 'google',
   label: 'Google (Gemini API)',
   kind: 'api',
+  listModels,
 
   async status() {
     const key = getKey('google');

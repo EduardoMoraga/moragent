@@ -158,3 +158,63 @@ how many previous sessions exist and how to resume.
 numbered lists with hanging indent, block quotes, fenced code blocks (dim, no wrap past width: hard-wrap),
 links as `text (url)`, tables degrade to aligned rows. Every returned line has `plain(line).length <= width`.
 Never throws on malformed markdown (unclosed ** or ```).
+
+## 7. v5.2 — a real terminal (Edu: "no es terminal", "interfaz horrible", "no puedo cambiar el orquestador")
+
+The full-screen boxed app is replaced by an **inline** terminal UI, like Claude Code / Codex / Pi:
+
+```
+$ moragent
+ █▀▄▀█ █▀█ █▀█ ▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀
+ █ ▀ █ █▄█ █▀▄ █▀█ █▄█ ██▄ █ ▀█  █   v5.2
+ propinas · orquestador codex (gpt-5.6-sol)
+ conectados: claude ✓ codex ✓ agy ✓ pi ✓ ollama ✓
+ escribe lo que necesitas · / comandos · Tab agentes
+
+> crea un conversor de temperaturas          ← printed to normal scrollback
+◆ Plan M · 2 subagentes …                    ← printed when final
+✓ backend · codex  T-0001  38s  5/5 tests    ← printed when the agent ends
+                                             ── live region (redrawn in place) ──
+  ● frontend · claude  T-0002  12s  escribiendo README
+╭──────────────────────────────────────╮
+│ > /orq_                              │
+│   /orquestador  elegir motor         │    ← slash menu while typing "/"
+╰──────────────────────────────────────╯
+  codex · gpt-5.6-sol · 1 agente trabajando · /help
+```
+
+Rules:
+- **No alternate screen, no full-screen box, no mouse capture.** Finished content is written once to stdout and
+  lives in the terminal's own scrollback (native scroll, selection, copy; it stays after exit).
+- A **live region** at the bottom is redrawn in place (cursor up + clear, no flicker, throttle ~20 fps):
+  streaming orchestrator text (last ~8 lines while streaming; the full text is printed when it ends), one line per
+  running agent (role · engine · id · elapsed · last activity), the input box, menus/pickers, and a status line.
+- Printing rule: when something becomes final (user message, orchestrator answer, system message, agent end)
+  the live region is erased, the final block is printed (markdown-rendered), then the live region is redrawn.
+- **Slash menu**: typing `/` shows matching commands with a one-line description (↑/↓ select, Tab/Enter
+  complete, Esc close). Source: `COMMANDS` registry (§7c).
+- **Pickers**: `/orquestador` with no args → list of engines (ready first, ✓/○) → then its model list; `/modelo`
+  with no args → model list of the orchestrator's engine; `/modelo <rol>` → that role's engine models. ↑/↓, Enter,
+  Esc; a free-text row "otro…" lets the user type any model id.
+- **Tab** toggles the agents detail in the live region (last 6 log lines per running agent). `/agentes <rol|id>`
+  prints that agent's full log to the scrollback.
+- Ctrl+C: first cancels running work, second (within 2 s) exits. Resize: redraw live region only.
+
+### 7a. TUI inline — `src/tui/inline/*` (owner: dev/Pi)
+`runInline({ engine, input = process.stdin, output = process.stdout }) -> Promise<void>`.
+Pure helpers for tests: `renderLive(state, ui, { cols }) -> string[]`, `renderFinal(message, { cols, lang }) -> string[]`.
+The engine's store is the same (§4, §6a). The TUI keeps its own `printedIds` set so each message prints once
+(messages may be updated while streaming; print only when `streaming` is false).
+
+### 7b. Model catalogs — `provider.listModels() -> Promise<[{ id, label, note? }]>` (owner: backend/Codex)
+Fast (≤ 3 s), never throws, cached per process. claude: aliases (`opus`, `sonnet`, `haiku`, `fable`) + verify
+anything better from `claude --help`; codex: from its CLI if it can list, else the model in `~/.codex/config.toml`
++ known ids from `codex --help`; agy: parse `agy models`; pi: its model listing command if any (`pi --help`);
+opencode/gemini: best effort; api: `GET /v1/models` (anthropic, openai, openrouter), Gemini models list, Ollama
+`/api/tags`. Mark unverified sources in code comments.
+
+### 7c. Command registry & welcome — `src/engine/commands.js` (owner: helper/Antigravity)
+`COMMANDS: [{ name, aliases: [], args: '<rol> <modelo>', es, en, group }]` — every slash command the engine
+supports (read `engine.command` in src/engine/index.js), one-line descriptions ES/EN. `welcomeLines(state, { cols })`
+→ logo (≤ 60 cols, 2 lines, brand color) + version + project · orchestrator (engine + model) + connected engines
+(✓/○) + one line of tips; fits 60 cols (logo degrades to text under 40).

@@ -1,5 +1,6 @@
 import { cliStatus } from './status.js';
 import { runStream, summary, usageEvent } from './stream.js';
+import { makeCliModelLister, parseIdModels, suggestedModels } from './models.js';
 
 // OpenCode's --format json schema is not stable across releases; keep the mapping permissive.
 export function parseOpenCode(record, state) {
@@ -40,11 +41,17 @@ const status = cliStatus({
 
 export const loginCommand = ['opencode', 'auth', 'login'];
 
+export const listModels = makeCliModelLister({
+  key: 'opencode', command: 'opencode', args: ['models'], parse: parseIdModels,
+  fallback: suggestedModels(['anthropic/claude-sonnet-5', 'openai/gpt-4o']),
+});
+
 export const opencode = {
   id: 'opencode',
   label: 'OpenCode',
   kind: 'subscription',
   loginCommand,
+  listModels,
   status,
   async run(options) {
     const prompt = options.system ? `${options.system}\n\n${options.prompt}` : options.prompt;

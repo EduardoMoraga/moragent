@@ -2,6 +2,7 @@ import { createOpenAIAdapter } from './openai.js';
 import { runApiLoop } from './loop.js';
 import { getKey } from '../credentials.js';
 import { t } from '../../core/i18n.js';
+import { makeApiModelLister, suggestedApiModels } from './models.js';
 
 export const openrouterAdapter = createOpenAIAdapter({
   id: 'openrouter',
@@ -14,10 +15,28 @@ export const openrouterAdapter = createOpenAIAdapter({
   },
 });
 
+export const listModels = makeApiModelLister({
+  key: 'openrouter',
+  request: () => {
+    const apiKey = getKey('openrouter');
+    return apiKey ? {
+      url: 'https://openrouter.ai/api/v1/models',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://github.com/EduardoMoraga/moragent',
+        'X-Title': 'MORAGENT',
+      },
+    } : null;
+  },
+  parse: (json) => (json.data || []).map((model) => ({ id: model.id, label: model.name || model.id })),
+  fallback: suggestedApiModels(['anthropic/claude-sonnet-5']),
+});
+
 export const openrouter = {
   id: 'openrouter',
   label: 'OpenRouter',
   kind: 'api',
+  listModels,
 
   async status() {
     const key = getKey('openrouter');

@@ -1,6 +1,7 @@
 import { autonomyArgsFor } from '../../crew/adapters.js';
 import { cliStatus } from './status.js';
 import { runStream, summary, usageEvent } from './stream.js';
+import { makeCliModelLister, suggestedModels } from './models.js';
 
 // Gemini was not installed on the v5 probe machine. This parser and its resume flags are
 // deliberately best-effort, based on the public stream-json shape used by Gemini CLI.
@@ -41,11 +42,17 @@ const status = cliStatus({
 // Gemini was absent on the probe machine; launching its TUI is the documented auth entrypoint.
 export const loginCommand = ['gemini'];
 
+// Gemini CLI was unavailable on the probe machine and exposes no verified headless listing here.
+export const listModels = makeCliModelLister({
+  key: 'gemini', fallback: suggestedModels(['gemini-2.5-pro', 'gemini-2.5-flash']),
+});
+
 export const gemini = {
   id: 'gemini',
   label: 'Gemini CLI',
   kind: 'subscription',
   loginCommand,
+  listModels,
   status,
   async run(options) {
     const args = [

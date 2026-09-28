@@ -95,6 +95,15 @@ export function appendLog(log = [], e) {
   return next.filter((x) => x.kind !== 'text' || x.text.trim()).slice(-LOG_MAX);
 }
 
+// Chat shows the start of a long summary, cut on a line boundary; the full text lives in Tab / the log.
+export function brief(text, max = 700) {
+  const s = String(text || '').trim();
+  if (s.length <= max) return s;
+  const cut = s.lastIndexOf('\n', max);
+  const head = s.slice(0, cut > max * 0.4 ? cut : s.lastIndexOf(' ', max)).trimEnd();
+  return `${head}\n${t('… (resumen completo: Tab o /agentes)', '… (full summary: Tab or /agents)')}`;
+}
+
 const blockedText = (text) => /^\s*(BLOQUEADO|BLOCKED)\s*:/i.test(text || '');
 
 // `providers` ({ listProviders, getProvider }) is injectable for tests; defaults to src/providers.
@@ -293,7 +302,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     } catch { /* memory is best effort */ }
     await refreshBrain(root);
     await refreshCounts();
-    store.addMessage({ from: 'agent', agent: task.role, provider: planTask.provider, taskId: task.id, text: `${status === 'done' ? '✓' : status === 'blocked' ? '!' : '✗'} ${task.id} ${task.title}${summary ? `\n${summary.slice(0, 600)}` : ''}` });
+    store.addMessage({ from: 'agent', agent: task.role, provider: planTask.provider, taskId: task.id, text: `${status === 'done' ? '✓' : status === 'blocked' ? '!' : '✗'} ${task.id} ${task.title}${summary ? `\n${brief(summary)}` : ''}` });
     return { taskId: task.id, role: task.role, provider: planTask.provider, title: task.title, status, summary };
   }
 
@@ -411,6 +420,23 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
         store.set({ orchestrator: { ...store.state.orchestrator, provider: id } });
         if (root) { config.orchestrator = id; saveConfig(root, config); }
         store.addMessage({ from: 'system', text: t(`Orquestador: ${id}`, `Orchestrator: ${id}`) });
+        return;
+      }
+      case 'tarea': case 'desplegar': case 'task': case 'deploy': {
+        // Explicit deployment: one subagent for one task, no planning round.
+        const roles = Object.keys(config?.crew || {}).filter((r) => r !== 'lead');
+        const [role, ...words] = list;
+        const body = words.join(' ').trim();
+        if (!role || !body || (root && !roles.includes(role))) {
+          store.addMessage({ from: 'system', text: t(`Uso: /tarea <rol> <qué hacer>\nRoles: ${roles.join(', ') || 'backend, frontend, helper, dev'}\nEjemplo: /tarea backend crea temp.js con cToF y su test`, `Usage: /task <role> <what to do>\nRoles: ${roles.join(', ') || 'backend, frontend, helper, dev'}\nExample: /task backend create temp.js with cToF and a test`) });
+          return;
+        }
+        if (!store.state.providers.length) await engine.refreshProviders();
+        store.addMessage({ from: 'user', text: `/tarea ${role} ${body}` });
+        await ensureProject(body);
+        const plan = { size: 'S', summary: body.slice(0, 80), tasks: [{ id: 't1', role, provider: null, title: body.slice(0, 100), prompt: body, doneWhen: '', dependsOn: [] }] };
+        store.addMessage({ from: 'system', text: t(`Desplegando ${role} (${config.crew[role]?.cli || '?'})…`, `Deploying ${role} (${config.crew[role]?.cli || '?'})…`) });
+        await runPlan(plan);
         return;
       }
       case 'modelo': case 'model': {
@@ -562,10 +588,17 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     }
   }
 
+  // Model catalog of one engine, for pickers. Never throws.
+  engine.listModels = async (id) => {
+    try { return (await provider(id)?.listModels?.()) || []; } catch { return []; }
+  };
+  engine.roleEngine = (role) => config?.crew?.[role]?.cli || null;
+
   engine.stop = () => { for (const ac of controllers) ac.abort(); };
 
   function helpText() {
-    return t(`Escribe lo que necesitas y el orquestador decide si responde o reparte trabajo.
+    return t(`Escribe lo que necesitas y el orquestador decide si responde o despliega agentes.
+/tarea <rol> <texto>  desplegar un agente directo (ej: /tarea backend crea temp.js)
 /login            conectar suscripciones o API keys
 /equipo           ver el equipo · /equipo <rol> <motor> para cambiarlo
 /orquestador <m>  elegir el motor del orquestador
@@ -577,7 +610,8 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /plan <texto>     pedir un plan explícito
 /abrir <rol|id>   sacar un subagente a un panel externo
 /cancel           cancelar lo que está corriendo
-/salir            salir (Ctrl+C dos veces)`, `Type what you need; the orchestrator either answers or delegates.
+/salir            salir (Ctrl+C dos veces)`, `Type what you need; the orchestrator either answers or deploys agents.
+/task <role> <text>   deploy one agent directly (e.g. /task backend create temp.js)
 /login            connect subscriptions or API keys
 /crew             show the crew · /crew <role> <engine> to change it
 /orchestrator <e> pick the orchestrator engine
@@ -593,16 +627,18 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
   }
 
   if (root) ensureDir(dirs(root).runs);
-  engine.welcome = () => {
+  // brief: the terminal UI already printed the logo and connected engines; say only what to do next.
+  engine.welcome = ({ brief = false } = {}) => {
     const ready = store.state.providers.filter((p) => p.ready).map((p) => p.label);
-    const conn = ready.length ? t(`Conectado: ${ready.join(', ')}.`, `Connected: ${ready.join(', ')}.`) : t('Ningún motor conectado: usa /login.', 'No engine connected: use /login.');
+    const conn = brief ? (ready.length ? '' : t('Ningún motor conectado: usa /login.', 'No engine connected: use /login.'))
+      : ready.length ? t(`Conectado: ${ready.join(', ')}.`, `Connected: ${ready.join(', ')}.`) : t('Ningún motor conectado: usa /login.', 'No engine connected: use /login.');
     const saved = (store.state.sessions || []).length;
     const resumeHint = saved ? t(`\n${saved} sesión(es) anterior(es): /sesiones para verlas.`, `\n${saved} previous session(s): /sessions to see them.`) : '';
     const elsewhere = root && path.resolve(root) !== path.resolve(cwd);
     const where = elsewhere ? t(` (en ${root}; para un proyecto nuevo en esta carpeta usa /nuevo)`, ` (in ${root}; for a new project in this folder use /new)`) : '';
     store.addMessage({ from: 'orchestrator', text: root
-      ? t(`${conn}\nProyecto ${config.project}${where}. ¿Qué hacemos? (/help para ver comandos)${resumeHint}`, `${conn}\nProject ${config.project}${where}. What are we doing? (/help for commands)${resumeHint}`)
-      : t(`${conn}\nEsta carpeta todavía no es un proyecto MORAGENT. Cuéntame qué quieres construir y lo preparo.`, `${conn}\nThis folder is not a MORAGENT project yet. Tell me what you want to build and I will set it up.`) });
+      ? t(`${conn ? `${conn}\n` : ''}Proyecto ${config.project}${where}. ¿Qué hacemos? Pide algo o usa /tarea para desplegar un agente.${resumeHint}`, `${conn ? `${conn}\n` : ''}Project ${config.project}${where}. What are we doing? Ask, or use /task to deploy an agent.${resumeHint}`)
+      : t(`${conn ? `${conn}\n` : ''}Esta carpeta todavía no es un proyecto MORAGENT. Cuéntame qué quieres construir y lo preparo.`, `${conn ? `${conn}\n` : ''}This folder is not a MORAGENT project yet. Tell me what you want to build and I will set it up.`) });
   };
   return engine;
 }

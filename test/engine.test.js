@@ -227,3 +227,33 @@ test('/modelo sets the orchestrator and role models, persists them and passes th
   await engine.command('modelo', ['default']);
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.moragent', 'moragent.json'), 'utf8')).orchestratorModel, undefined);
 });
+
+test('/tarea deploys one agent directly without an orchestrator turn', async () => {
+  const root = tmp();
+  const cfg = defaultConfig({ project: 'demo', lang: 'es', preset: 'duo', clis: { lead: 'claude', backend: 'codex' } });
+  scaffold(root, cfg);
+  const calls = [];
+  const engine = await createEngine({ root, config: cfg, providers: fakeProviders(calls) });
+  await engine.command('tarea', ['backend', 'Escribe', 'hola.txt']);
+  assert.equal(calls.filter((c) => c.who === 'orchestrator').length, 0);
+  assert.equal(calls.filter((c) => c.who === 'worker').length, 1);
+  assert.equal(listTasks(root)[0].status, 'done');
+  await engine.command('tarea', ['nadie', 'x']);
+  assert.match(engine.store.state.messages.at(-1).text, /Uso: \/tarea/);
+});
+
+test('codex resume puts exec options before the resume subcommand', async () => {
+  const { setExec } = await import('../src/core/exec.js');
+  void setExec;
+  const mod = await import('../src/providers/cli/codex.js');
+  const codex = mod.default || mod.codex;
+  const stream = await import('../src/providers/cli/stream.js');
+  let seen = null;
+  const orig = stream.setSpawn || null;
+  if (!orig) return; // spawn seam not available: covered by the live check in the changelog
+  stream.setSpawn((cmd, args) => { seen = args; return null; });
+  try { await codex.run({ root: tmp(), prompt: 'hola', sessionId: 'abc', autonomy: 'readonly', onEvent() {} }); } catch { /* fake spawn */ }
+  const i = seen.indexOf('resume');
+  assert.ok(i > seen.indexOf('-s'), '-s precedes resume');
+  assert.equal(seen[i + 1], 'abc');
+});

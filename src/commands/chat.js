@@ -14,14 +14,14 @@ export default {
       throw new MoragentError('NO_TTY', t('La app necesita una terminal interactiva.', 'The app needs an interactive terminal.'), 'mora status · mora help');
     }
     let tui;
-    try { tui = await import('../tui/app.js'); } catch (e) {
+    try { tui = await import('../tui/inline/index.js'); } catch (e) {
       if (e?.code !== 'ERR_MODULE_NOT_FOUND') throw e;
       throw new MoragentError('NO_TUI', t('La interfaz todavía no está instalada.', 'The interface is not installed yet.'), 'mora status');
     }
     const engine = await createEngine({ root: ctx.root, config: ctx.config });
     await engine.refreshProviders();
-    engine.welcome();
-    await tui.runTui({ engine });
+    engine.welcome({ brief: true });
+    await tui.runInline({ engine });
     engine.stop();
     return 0;
   },

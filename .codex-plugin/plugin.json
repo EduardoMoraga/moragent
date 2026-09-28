@@ -1,6 +1,6 @@
 {
   "name": "moragent",
-  "version": "5.1.1",
+  "version": "5.2.0",
   "description": "MORAGENT v4 skills for leading and working in multi-agent CLI projects with mora.",
   "author": {
     "name": "Eduardo Moraga",

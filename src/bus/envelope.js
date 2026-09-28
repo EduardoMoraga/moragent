@@ -47,7 +47,7 @@ export async function buildEnvelope({ root, task, config, exitProtocol = true })
 - ${es ? 'Las pruebas relevantes pasan o los riesgos quedan documentados.' : 'Relevant tests pass or risks are documented.'}`);
   if (!exitProtocol) {
     sections.push(`## ${es ? 'Al terminar' : 'When you finish'}\n\n${es
-      ? 'Termina con un resumen breve: qué cambiaste (archivos) y cómo se verifica. No ejecutes `mora done` ni `mora block`: MORAGENT cierra la tarea con tu respuesta final. Si no puedes completarla, empieza tu respuesta final con `BLOQUEADO:` y explica qué falta.'
+      ? 'Responde en español neutro. Termina con un resumen breve: qué cambiaste (archivos) y cómo se verifica. No ejecutes `mora done` ni `mora block`: MORAGENT cierra la tarea con tu respuesta final. Si no puedes completarla, empieza tu respuesta final con `BLOQUEADO:` y explica qué falta.'
       : 'End with a short summary: what you changed (files) and how to verify it. Do not run `mora done` or `mora block`: MORAGENT closes the task from your final answer. If you cannot complete it, start your final answer with `BLOCKED:` and explain what is missing.'}`);
   } else {
     sections.push(`## ${es ? 'Protocolo de salida' : 'Exit protocol'}

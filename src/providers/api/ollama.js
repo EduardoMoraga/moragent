@@ -2,6 +2,7 @@ import { createOpenAIAdapter } from './openai.js';
 import { runApiLoop, getFetch } from './loop.js';
 import { getKey } from '../credentials.js';
 import { t } from '../../core/i18n.js';
+import { makeApiModelLister, suggestedApiModels } from './models.js';
 
 function normalizeOllamaBase(url) {
   if (!url) return 'http://localhost:11434/v1';
@@ -26,10 +27,21 @@ export const ollamaAdapter = createOpenAIAdapter({
   requiresKey: false,
 });
 
+export const listModels = makeApiModelLister({
+  key: 'ollama',
+  request: () => ({ url: `${getOllamaHost().replace(/\/v1$/, '')}/api/tags` }),
+  parse: (json) => (json.models || []).map((model) => ({
+    id: model.name || model.model,
+    label: model.name || model.model,
+  })),
+  fallback: suggestedApiModels(['llama3']),
+});
+
 export const ollama = {
   id: 'ollama',
   label: 'Ollama (Local)',
   kind: 'api',
+  listModels,
 
   async status() {
     const rawHost = getOllamaHost();

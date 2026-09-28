@@ -2,6 +2,7 @@ import { getAnthropicTools } from './tools.js';
 import { runApiLoop } from './loop.js';
 import { getKey } from '../credentials.js';
 import { t } from '../../core/i18n.js';
+import { makeApiModelLister, suggestedApiModels } from './models.js';
 
 export const anthropicAdapter = {
   id: 'anthropic',
@@ -94,10 +95,24 @@ export const anthropicAdapter = {
   },
 };
 
+export const listModels = makeApiModelLister({
+  key: 'anthropic',
+  request: () => {
+    const apiKey = getKey('anthropic');
+    return apiKey ? {
+      url: 'https://api.anthropic.com/v1/models',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    } : null;
+  },
+  parse: (json) => (json.data || []).map((model) => ({ id: model.id, label: model.display_name || model.id })),
+  fallback: suggestedApiModels(['claude-sonnet-5']),
+});
+
 export const anthropic = {
   id: 'anthropic',
   label: 'Anthropic (Claude API)',
   kind: 'api',
+  listModels,
 
   async status() {
     const key = getKey('anthropic');

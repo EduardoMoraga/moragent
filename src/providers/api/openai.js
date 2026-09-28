@@ -2,6 +2,7 @@ import { getOpenAITools } from './tools.js';
 import { runApiLoop } from './loop.js';
 import { getKey } from '../credentials.js';
 import { t } from '../../core/i18n.js';
+import { makeApiModelLister, suggestedApiModels } from './models.js';
 
 export function createOpenAIAdapter({
   id = 'openai',
@@ -111,10 +112,24 @@ export const openaiAdapter = createOpenAIAdapter({
   requiresKey: true,
 });
 
+export const listModels = makeApiModelLister({
+  key: 'openai',
+  request: () => {
+    const apiKey = getKey('openai');
+    return apiKey ? {
+      url: 'https://api.openai.com/v1/models',
+      headers: { authorization: `Bearer ${apiKey}` },
+    } : null;
+  },
+  parse: (json) => (json.data || []).map((model) => ({ id: model.id, label: model.id })),
+  fallback: suggestedApiModels(['gpt-4o']),
+});
+
 export const openai = {
   id: 'openai',
   label: 'OpenAI (GPT API)',
   kind: 'api',
+  listModels,
 
   async status() {
     const key = getKey('openai');
