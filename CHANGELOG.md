@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.1.1] - 2026-09-27
+
+### Added
+- `/modelo` shows the model of the orchestrator and of each role; `/modelo <name>` changes the orchestrator's, `/modelo <role> <name>` a role's, `default` goes back to the engine's own. Saved in the project. Verified live: `haiku` on Claude and `gemini-3.8-flash-low` on Antigravity.
+
 ## [5.1.0] - 2026-09-27
 
 A usable chat, after the first real use.

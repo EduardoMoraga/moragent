@@ -202,3 +202,28 @@ test('plan parsing survives code fences and raw newlines inside task prompts', (
   assert.equal(stripPlan(text), 'Dos tareas.\n\nSigo después.');
   assert.equal(stripPlan('Pensando…\n```moragent-plan\n{"tasks":[{"id":"t1"'), 'Pensando…', 'half-streamed plan never shows');
 });
+
+test('/modelo sets the orchestrator and role models, persists them and passes them to the engine', async () => {
+  const root = tmp();
+  const cfg = defaultConfig({ project: 'demo', lang: 'es', preset: 'duo', clis: { lead: 'claude', backend: 'codex' } });
+  scaffold(root, cfg);
+  const calls = [];
+  const providers = fakeProviders(calls);
+  const seen = [];
+  const orig = providers.getProvider('claude').run;
+  providers.getProvider('claude').run = async (o) => { seen.push(o.model); return orig(o); };
+  const workerSeen = [];
+  const origW = providers.getProvider('codex').run;
+  providers.getProvider('codex').run = async (o) => { workerSeen.push(o.model); return origW(o); };
+  const engine = await createEngine({ root, config: cfg, providers });
+  await engine.command('modelo', ['sonnet']);
+  await engine.command('modelo', ['backend', 'gpt-x']);
+  const saved = JSON.parse(fs.readFileSync(path.join(root, '.moragent', 'moragent.json'), 'utf8'));
+  assert.equal(saved.orchestratorModel, 'sonnet');
+  assert.equal(saved.crew.backend.model, 'gpt-x');
+  await engine.send('crea hola.txt');
+  assert.ok(seen.every((m) => m === 'sonnet'));
+  assert.ok(workerSeen.length && workerSeen.every((m) => m === 'gpt-x'));
+  await engine.command('modelo', ['default']);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.moragent', 'moragent.json'), 'utf8')).orchestratorModel, undefined);
+});

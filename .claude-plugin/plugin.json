@@ -1,6 +1,6 @@
 {
   "name": "moragent",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "description": "MORAGENT v4 \u2014 lead a cross-vendor crew (Claude Code, Codex, Antigravity, Pi) with specs, a task bus, layered memory and an Obsidian second brain. Skills drive the `mora` CLI.",
   "author": {
     "name": "Eduardo Moraga",

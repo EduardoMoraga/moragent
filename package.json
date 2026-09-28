@@ -1,6 +1,6 @@
 {
   "name": "moragent",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "description": "The executive orchestrator for agentic development: one crew of Claude Code, Codex, Antigravity and Pi in real terminal panes, with layered memory, spec-driven phases and an Obsidian second brain.",
   "type": "module",
   "bin": {

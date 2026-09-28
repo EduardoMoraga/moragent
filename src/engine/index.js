@@ -106,7 +106,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     goal: config?.goal || '',
     lang: config?.lang || detectLang(),
     initialized: !!root,
-    orchestrator: { provider: config?.orchestrator || config?.crew?.lead?.cli || null, status: 'idle' },
+    orchestrator: { provider: config?.orchestrator || config?.crew?.lead?.cli || null, model: config?.orchestratorModel || null, activeModel: null, status: 'idle' },
     messages: [],
     agents: {},
     memory: memoryCounts(root),
@@ -218,8 +218,9 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     try {
       const res = await p.run({
         root, prompt: fullPrompt, system, sessionId: resumable ? session.id : null,
-        autonomy: 'readonly', signal: ac.signal, logFile: path.join(dirs(root).runs, 'orchestrator.log'),
+        autonomy: 'readonly', model: store.state.orchestrator.model || undefined, signal: ac.signal, logFile: path.join(dirs(root).runs, 'orchestrator.log'),
         onEvent: (e) => {
+          if (e.type === 'start' && e.model) store.set({ orchestrator: { ...store.state.orchestrator, activeModel: e.model } });
           if (e.type === 'text') { text += e.delta; store.updateMessage(msgId, { text: stripPlan(text) }); }
           if (e.type === 'tool') store.set({ orchestrator: { ...store.state.orchestrator, status: 'reading' } });
         },
@@ -260,7 +261,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
         root, prompt: envelope, autonomy: member.autonomy || 'auto', model: member.model, signal: ac.signal,
         logFile: path.join(dirs(root).runs, `${task.role}-${task.id}.log`),
         onEvent: (e) => {
-          if (e.type === 'start' && e.sessionId) store.setAgent(task.id, { sessionId: e.sessionId });
+          if (e.type === 'start') store.setAgent(task.id, { ...(e.sessionId ? { sessionId: e.sessionId } : {}), ...(e.model ? { model: e.model } : {}) });
           if (e.type === 'text') text += e.delta;
           const cur = store.state.agents[task.id];
           const line = lastLineFrom(e, cur?.lastLine);
@@ -412,6 +413,34 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
         store.addMessage({ from: 'system', text: t(`Orquestador: ${id}`, `Orchestrator: ${id}`) });
         return;
       }
+      case 'modelo': case 'model': {
+        // /modelo · /modelo <nombre> · /modelo <rol> <nombre> · "default" vuelve al del motor.
+        const roles = Object.keys(config?.crew || {});
+        const [a, b] = list;
+        const clear = (v) => (v === 'default' || v === 'defecto' ? null : v);
+        const hints = t('Ejemplos — claude: opus, sonnet, haiku · codex: su id de modelo (codex --help) · agy: ver `agy models` · pi: proveedor/modelo · ollama: qwen3.5:9b', 'Examples — claude: opus, sonnet, haiku · codex: its model id (codex --help) · agy: see `agy models` · pi: provider/model · ollama: qwen3.5:9b');
+        if (!a) {
+          const o = store.state.orchestrator;
+          const rows = [`${t('orquestador', 'orchestrator')} ${o.provider || '-'} · ${o.model || t('por defecto', 'default')}${o.activeModel ? t(` (en uso: ${o.activeModel})`, ` (active: ${o.activeModel})`) : ''}`,
+            ...roles.filter((r) => r !== 'lead').map((r) => `${r.padEnd(9)} ${config.crew[r].cli} · ${config.crew[r].model || t('por defecto', 'default')}`)];
+          store.addMessage({ from: 'system', text: `${t('Modelos', 'Models')} (/modelo <nombre> · /modelo <rol> <nombre> · default):\n${rows.join('\n')}\n${hints}` });
+          return;
+        }
+        if (b !== undefined && (roles.includes(a) || a === 'orquestador' || a === 'orchestrator')) {
+          if (a === 'orquestador' || a === 'orchestrator' || a === 'lead') return engine.command('modelo', [b]);
+          if (!root) { store.addMessage({ from: 'system', text: t('Todavía no hay proyecto.', 'No project yet.') }); return; }
+          config.crew[a] = { ...config.crew[a], model: clear(b) };
+          if (!config.crew[a].model) delete config.crew[a].model;
+          saveConfig(root, config);
+          store.addMessage({ from: 'system', text: t(`${a} usará ${clear(b) || 'el modelo por defecto'} (${config.crew[a].cli}).`, `${a} will use ${clear(b) || 'the default model'} (${config.crew[a].cli}).`) });
+          return;
+        }
+        const model = clear(a);
+        store.set({ orchestrator: { ...store.state.orchestrator, model, activeModel: null } });
+        if (root) { if (model) config.orchestratorModel = model; else delete config.orchestratorModel; saveConfig(root, config); }
+        store.addMessage({ from: 'system', text: t(`Orquestador: ${store.state.orchestrator.provider} · ${model || 'modelo por defecto'}. Si el modelo no existe, el motor lo dirá en la próxima respuesta.`, `Orchestrator: ${store.state.orchestrator.provider} · ${model || 'default model'}. If the model does not exist, the engine will say so on the next answer.`) });
+        return;
+      }
       case 'equipo': case 'crew': {
         if (!root) { store.addMessage({ from: 'system', text: t('Todavía no hay proyecto: escribe qué quieres construir.', 'No project yet: say what you want to build.') }); return; }
         const [role, cli] = list;
@@ -540,6 +569,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /login            conectar suscripciones o API keys
 /equipo           ver el equipo · /equipo <rol> <motor> para cambiarlo
 /orquestador <m>  elegir el motor del orquestador
+/modelo [rol] <n> ver o cambiar el modelo (del orquestador o de un rol)
 /memoria [texto]  ver o buscar en la memoria
 /nuevo            crear un proyecto nuevo en esta carpeta
 /sesiones         ver conversaciones guardadas · /sesion <n> retomar · /limpiar empezar de cero
@@ -551,6 +581,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /login            connect subscriptions or API keys
 /crew             show the crew · /crew <role> <engine> to change it
 /orchestrator <e> pick the orchestrator engine
+/model [role] <n> show or change the model (orchestrator or a role)
 /memory [text]    show or search memory
 /new              create a new project in this folder
 /sessions         saved conversations · /session <n> resume · /clear start fresh
