@@ -45,6 +45,22 @@ export const COMMANDS = [
     group: 'config',
   },
   {
+    name: 'idioma',
+    aliases: ['language', 'lang'],
+    args: '<es|en>',
+    es: 'cambiar el idioma de MORAGENT',
+    en: 'change the MORAGENT language',
+    group: 'config',
+  },
+  {
+    name: 'recuperaciones',
+    aliases: ['recoveries'],
+    args: '[id|inspeccionar <id>|aplicar <id>]',
+    es: 'inspeccionar o aplicar archivos de una copia guardada',
+    en: 'inspect or apply files from a saved task copy',
+    group: 'agents',
+  },
+  {
     name: 'equipo',
     aliases: ['crew'],
     args: '[rol] [motor]',
@@ -237,13 +253,10 @@ export function welcomeLines(state = {}, options = {}) {
   const connLabel = isEs ? 'conectados:' : 'connected:';
   const providers = Array.isArray(state?.providers) ? state.providers : [];
   if (providers.length > 0) {
-    const items = providers.map((p) => {
-      const mark = p.ready
-        ? (colors.green ? colors.green('✓') : '✓')
-        : (colors.dim ? colors.dim('○') : '○');
-      return `${p.id} ${mark}`;
-    });
-    out.push(` ${connLabel} ${items.join(' ')}`);
+    const ready = providers.filter((p) => p.ready);
+    const visible = ready.slice(0, 3).map((p) => p.id).join(', ');
+    const more = ready.length > 3 ? `, +${ready.length - 3}` : '';
+    out.push(` ${connLabel} ${ready.length}/${providers.length}${visible ? ` · ${visible}${more}` : ''} · /login`);
   } else {
     const noneText = isEs ? '(ninguno: usa /login)' : '(none: use /login)';
     out.push(` ${connLabel} ${noneText}`);

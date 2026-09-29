@@ -9,7 +9,7 @@ import opencode from './cli/opencode.js';
 
 export const PROVIDERS = { claude, codex, agy, pi, gemini, opencode };
 
-const apiIds = ['anthropic', 'openai', 'openrouter', 'ollama', 'google'];
+const apiIds = ['anthropic', 'openai', 'openrouter', 'ollama', 'google', 'compatible'];
 
 const apiProviders = await Promise.all(apiIds.map(async (id) => {
   const target = new URL(`./api/${id}.js`, import.meta.url);

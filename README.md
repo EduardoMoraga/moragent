@@ -43,21 +43,21 @@ Node ≥ 18, zero npm dependencies. If the folder has no `.moragent/` yet, the a
 
 ```
 $ moragent
-┌─ MORAGENT · my-app ─────────────────────────────┬─ Equipo ───────────────┐
-│ ◆ Hola. Conectado: Claude (suscripción), Codex  │ ◆ Orquestador  listo   │
-│   ¿Qué construimos?                             │                        │
-│ tú › API de tareas con tests                    ├─ Memoria ──────────────┤
-│ ◆ Plan (M · 2 subagentes) …                     │ canónica 3 · episod. 9 │
-│ ◆ backend (codex) terminó T-0001 ✓              │ spec: tareas → apply   │
-├─────────────────────────────────────────────────┴────────────────────────┤
-│ › _                              /login /plan /equipo /memoria /abrir /help│
-└──────────────────────────────────────────────────────────────────────────┘
+ MORAGENT v5.2.0
+ my-app · orchestrator claude
+ connected: 2/12 · claude, codex · /login
+◆ Project my-app. What are we doing? Ask, or use /task to deploy an agent.
+› Build a task API with tests
+◐ Orchestrator · thinking · 4s
+● backend · codex  T-0001  8s  write_file src/tasks.js
+› _
+claude · 1 agent working · /help
 ```
 
-1. **Launch `moragent`** in your project terminal. You land directly inside a full-screen, native harness.
-2. **Type `/login`** to see detected subscription CLIs (already logged in or hints to log in) and manage API keys or local Ollama.
+1. **Launch `moragent`** in your project terminal. The app keeps the terminal's native scrollback and updates the active work in place.
+2. **Type `/login`** to see every supported provider and its connection status. A subscription login runs in the same terminal; API keys are entered with a masked prompt.
 3. **Talk to the executive orchestrator** in plain language. It explores your repo, scopes features, and derives a concrete plan.
-4. **Subagents run inside the app**, streamed directly into the session. You track progress in real time in the sidebar. If you want to interact directly with any agent in its own terminal pane, type `/open <role|id>` (e.g. `/open backend`) to pop it out into Orca, herdr, or tmux.
+4. **Subagents run inside the app**, with live activity below the conversation. Press Tab for recent logs. To open an agent in its own terminal pane, type `/open <role|id>` (e.g. `/open backend`).
 
 ---
 
@@ -71,19 +71,31 @@ MORAGENT has **no account and no servers**. It never acts as a proxy: every engi
 | `codex` | OpenAI Codex CLI | Subscription CLI | ✓ Verified live (Sep 27, 2026) |
 | `agy` | Google Antigravity CLI | Subscription CLI | ✓ Verified live (Sep 27, 2026) |
 | `pi` | Mario Zechner's Pi | Subscription CLI | ✓ Verified live (Sep 27, 2026) |
-| `opencode` | OpenCode AI | Subscription CLI | Supported via adapter |
+| `opencode` | OpenCode AI | Subscription CLI | ✓ Live answer, tools and isolated working directory tested (Sep 28, 2026); readonly tool denial not yet live-verified |
 | `gemini` | Google Gemini CLI | Subscription CLI | Best effort from `--help` (unverified) |
 | `anthropic` | Anthropic (Claude API) | Native API loop | Messages API with tool use (`claude-sonnet-5`) |
 | `openai` | OpenAI (GPT API) | Native API loop | Chat completions with tool calls (`gpt-4o`) |
 | `openrouter` | OpenRouter | Native API loop | OpenAI-compatible endpoint (`anthropic/claude-sonnet-5`) |
 | `google` | Google Gemini API | Native API loop | `generateContent` with function declarations (`gemini-2.0-flash`) |
+| `ollama` | Ollama (Local) | Native API loop | ✓ Verified live with `qwen3.5:9b` writing and reading files |
+| `compatible` | Any OpenAI-compatible endpoint | Native API loop | Configure a base URL and optional API key with `/login compatible` |
 
 <sub>Default models can be changed per provider with `MORAGENT_<PROVIDER>_MODEL` (e.g. `MORAGENT_OPENAI_MODEL`). The OpenAI and Google defaults were not verified live.</sub>
-| `ollama` | Ollama (Local) | Native API loop | ✓ Verified live with `qwen3.5:9b` writing and reading files |
 
-API keys are stored locally in `~/.moragent/credentials.json` with strict POSIX permissions (`0600`), and standard environment variables take precedence (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OLLAMA_HOST`).
+OpenCode's model catalog may list IDs your account cannot use. On this machine its free-tier default returned HTTP 403 from MORAGENT, while one listed OpenAI ID returned HTTP 400; another connected Codex model worked. MORAGENT displays the provider's short error and HTTP code so you can choose a usable model with `/model`. In the picker, `·` means model access has not been tested; only the provider picker uses `✓` for a ready engine.
 
-The native API loop provides built-in tools (`read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `bash`), all strictly confined to the project root with output limits (≤ 20 KB) and execution timeouts (120 s).
+For Ollama, if you have not chosen a model, MORAGENT selects the first installed tool-capable model reported by `/api/tags`; it does not assume `llama3` is installed. An explicit `/model` choice or `MORAGENT_OLLAMA_MODEL` takes priority. If Ollama reports no tool-capable models, MORAGENT asks you to install or select one rather than sending a request with a phantom default. This path was verified live with `gemma4:latest`.
+
+Subscription CLI output is decoded as UTF-8 across stream chunks. A single JSONL record is limited to 16 million characters to prevent an unbounded memory spike; increase `MORAGENT_CLI_MAX_LINE_CHARS` only if your CLI genuinely emits larger records.
+
+API keys are stored locally in `~/.moragent/credentials.json` with strict POSIX permissions (`0600`), and standard environment variables take precedence (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OLLAMA_HOST`). If `/login` saves a key while its environment variable is set, MORAGENT warns that the saved key is inactive; unset the variable and restart MORAGENT to use it.
+
+Provider traces under `.moragent/runs/` may contain prompts, code and tool arguments. New logs are private (`0600` on POSIX); older logs are tightened when reopened. Previously created logs that are not reopened may need a manual permissions check. Windows ACL behavior has not been validated.
+
+To connect another compatible server, choose `compatible` in `/login` and enter its base URL including `/v1` (for example `http://localhost:8000/v1`). Add a key if the server requires one, then choose its model with `/model`. You can also set `MORAGENT_COMPATIBLE_BASE_URL`, `MORAGENT_COMPATIBLE_API_KEY`, and `MORAGENT_COMPATIBLE_MODEL` in the environment. The URL and key environment variables override values saved through `/login`; the app warns when this happens.
+Servers without `/models` can still be used: enter their chat model ID through `/model`. The picker omits recognizable embedding and other non-chat model IDs.
+
+The native API loop provides file tools (`read_file`, `write_file`, `edit_file`, `list_dir`, `grep`) confined to the project root, with output limits (≤ 20 KB). `grep` runs away from the terminal thread, can be cancelled, times out after 30 seconds by default (`MORAGENT_GREP_TIMEOUT_MS`), and marks results partial after 1,000 matches. Its shell tool (`bash`) has no OS sandbox, so API agents can use it only with explicit `full` autonomy; shell commands have a 120-second timeout and `/cancel` stops the shell process tree. API requests time out after 10 minutes by default; set `MORAGENT_API_TIMEOUT_MS` for slower local models.
 
 ---
 
@@ -93,13 +105,15 @@ Type these slash commands inside `moragent`:
 
 - `/help`: show available commands
 - `/login`: connect subscriptions or configure API keys
-- `/crew` (or `/equipo`): view the crew · `/crew <role> <engine>` to reassign roles
-- `/orchestrator <engine>` (or `/orquestador <m>`): pick the orchestrator engine
-- `/model [role] <name>` (or `/modelo`): show or change the model of the orchestrator or a role (`/model sonnet`, `/model backend gpt-5.5`; `default` goes back to the engine's own)
+- `/crew` (or `/equipo`): view the crew · `/crew <role> <engine>` to reassign roles. API choices affect native workers; the external pane keeps its CLI.
+- `/orchestrator <engine>` (or `/orquestador <m>`): pick the orchestrator engine. If the preferred engine is unavailable, MORAGENT announces a temporary fallback and restores the preference when it reconnects.
+- `/model` or `/model <role>` (or `/modelo`): browse models across all providers and pick one for the orchestrator or a role. `/model <name>` and `/model <role> <name>` set a model directly; `default` uses the selected provider's default.
+- `/language <es|en>` (or `/idioma`): switch the interface and future answers to Spanish or English; saved per project. Start with `moragent --lang en` for a session-only override. Before creating a project, `MORAGENT_LANG=en` also selects English.
+- `/recoveries [task-id]` (or `/recuperaciones`): list retained private copies. `/recoveries inspect <id>` shows captured file and directory changes and conflicts; `/recoveries apply <id>` explicitly applies those paths only if the source still matches the saved baseline. Copies that failed an exact acceptance check are marked manual-only and cannot be applied with this command. New copies remain applicable after moving the whole project; moving only a recovery folder is rejected. The copy and any private Git state remain available. Older copies without a manifest require manual recovery; older path-bound manifests must stay at their original path.
 - `/memory [text]` (or `/memoria [texto]`): show memory summary or search notes
 - `/plan <text>`: ask the orchestrator for an explicit plan
 - `/open <role|id>` (or `/abrir <rol|id>`): take a subagent out into an external terminal pane
-- `/cancel`: cancel running work
+- `/cancel`: cancel running work, including a subscription CLI's process group
 - `/exit` (or `/salir`): quit the app (or press Ctrl+C twice)
 
 ---
@@ -191,10 +205,10 @@ Every role and engine run operates under an explicit autonomy contract:
 
 | Mode | What the agent may do without asking |
 |---|---|
-| `readonly` | Read repository files (`read_file`, `list_dir`, `grep`). Writes (`write_file`, `edit_file`) and shell execution (`bash`) are strictly refused with a clear message. Ideal for orchestrators. |
-| `auto` **(default)** | Edit files within the repo and run safe verification commands (`mora`, `node`, `npm test`, `git status`, `git diff`). Shell writes outside the workspace are blocked by vendor sandboxes. |
-| `full` | Unrestricted operations without prompts or sandboxes (`--dangerously-skip-permissions` / `--yolo`). Use only in throwaway disposable containers. |
-| `ask` | Never run commands or edits without explicit user confirmation. |
+| `readonly` | Native API tools allow reading and search, and refuse writes and shell commands. Subscription CLIs use vendor policies; OpenCode receives explicit deny rules, not an OS sandbox. |
+| `auto` **(default)** | Edit project files. Native API agents cannot run shell commands in this mode. Subscription CLI policies vary by vendor; a private MORAGENT workspace is not an OS sandbox. |
+| `full` | Requests the broadest available vendor autonomy; exact permissions vary by CLI. Use only in throwaway disposable containers. |
+| `ask` | Native API agents can read but cannot write or run commands until an interactive approval flow is available. |
 
 ---
 
@@ -214,10 +228,29 @@ Verified live on September 27, 2026:
 ## FAQ — Coming from a chat window
 
 **Do I need tmux or Orca?**  
-No. MORAGENT v5 is a standalone, full-screen terminal app that runs inside any terminal (Terminal.app, iTerm2, Alacritty, Ghostty, Windows Terminal, etc.). Orca, herdr, or tmux are only used if you choose to pop an agent out into a separate terminal pane using `/open`.
+No. MORAGENT v5 runs inline inside any terminal (Terminal.app, iTerm2, Alacritty, Ghostty, Windows Terminal, etc.). Orca, herdr, or tmux are only used if you choose to pop an agent out into a separate terminal pane using `/open`.
 
 **Is it one AI or several?**  
 It is one executive orchestrator coordinating multiple specialized subagents (backend, frontend, helper, dev). Each subagent can use whichever engine or API model best suits its task.
+
+**Can parallel agents overwrite each other?**
+Native-engine agents work in private project copies. MORAGENT integrates changed files and directories only if their originals have not changed; a conflict blocks the task and preserves its copy under `.moragent/runs/recovery/`. Empty directories and directory permission changes are included. Private Git commits, branches, tags, stashes, detached `HEAD`, local `.git/config` changes, or staged changes also keep the copy for recovery instead of silently losing Git state. Path recovery never transfers that Git state or deletes the saved copy. This prevents accidental merge overwrites, but it is not an OS security sandbox for unrestricted CLIs.
+
+For exact text-file requirements, a plan can include structured `file_text` checks (lines plus an explicit final-newline flag). When the request explicitly calls for exact content or a final LF, MORAGENT requires such a check before dispatch; if it names one unambiguous file, the check must cover that path. For multiple files or lines, you can put an explicit contract in your request:
+
+```moragent-checks
+{"files":[{"path":"a.txt","lines":["first","second"],"finalNewline":true},{"path":"b.txt","lines":["last"],"finalNewline":false}]}
+```
+
+MORAGENT requires the plan to cover every listed file and independently compares each check with your block before workers start. Every task that changes a listed file must match your bytes before its private copy can publish, even if the plan placed that file's check on a later task. A mismatch blocks the task and preserves its copy for manual inspection, even if an agent claims success. Without an explicit block, MORAGENT anchors only unambiguous one-line literal requests; it does not infer arbitrary expected bytes from prose. Other acceptance criteria still require review.
+
+Checks cannot target paths MORAGENT does not publish: `.git`, `node_modules`, or its internal `.moragent/{runs,tasks,sessions,memory}` directories.
+
+Native API workers can write exact text with `write_file({path, lines, final_newline})`, which constructs LF bytes without relying on the model to escape `\n` inside a content string. The original `content` form remains available.
+
+Internal symlinks are rebased into each worker copy. A symlink that points outside the project, including one under `node_modules`, stops worker preparation with a clear error: MORAGENT cannot claim an isolated copy while that link still reaches external files. This does not prevent a CLI from choosing an external absolute path on its own.
+
+`node_modules` is copied for worker context but never published to the real project. Ordinary dependency changes are detected from filesystem metadata; they block integration and retain the worker copy. `/recoveries inspect` lists a sample, and applying other paths leaves dependency changes in that copy. This is not a byte-for-byte audit of every dependency file.
 
 **Does it send my code to MORAGENT servers?**  
 No. MORAGENT has no servers and does not collect telemetry. Your agent CLIs talk directly to their respective providers, and local Ollama runs completely offline.
@@ -227,6 +260,7 @@ MORAGENT is 100% free and open source (MIT). You only pay your existing vendor s
 
 **Can I run everything with just one tool?**  
 Yes. You can run both the orchestrator and all subagents using a single engine (e.g. Claude Code only, Codex only, or 100% locally with Ollama).
+When an API is the only ready provider on first run, MORAGENT saves it as the project orchestrator. `mora doctor` checks that API separately; missing CLIs warn about unavailable external panes rather than failing the native API workflow.
 
 **Can I undo it?**  
 Everything lives cleanly in `.moragent/` plus managed comment blocks in `AGENTS.md` / `CLAUDE.md`. Remove those and your repo is restored to its exact previous state.

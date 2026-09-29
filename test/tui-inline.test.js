@@ -30,6 +30,15 @@ test('renderFinal wraps markdown in 60 and 120 cols', () => {
   }
 });
 
+test('blocked workers are not counted as actively working', () => {
+  const state = sampleState();
+  state.agents.t1 = { id: 'T-0001', role: 'backend', provider: 'compatible', status: 'blocked', taskId: 'T-0001' };
+  state.orchestrator.status = 'idle';
+  const text = plain(renderLive(state, { input: '' }, { cols: 80 }).join('\n'));
+  assert.match(text, /sin agentes activos|no agents running/);
+  assert.doesNotMatch(text, /agente trabajando|agent working/);
+});
+
 test('runInline prints updated message once when it becomes final and picker navigates', async () => {
   const input = new PassThrough();
   input.isTTY = true;

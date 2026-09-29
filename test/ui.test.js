@@ -7,7 +7,7 @@ import { PassThrough } from 'node:stream';
 import { setExec, resetExec } from '../src/core/exec.js';
 import { setLang } from '../src/core/i18n.js';
 import { plain } from '../src/core/log.js';
-import { defaultConfig, PRESETS } from '../src/core/config.js';
+import { defaultConfig, PRESETS, CLI_IDS } from '../src/core/config.js';
 import { writeJSON } from '../src/core/fsx.js';
 import { scaffold } from '../src/commands/init.js';
 import { renderBoard, groupTasks } from '../src/ui/board.js';
@@ -16,7 +16,7 @@ import { createPrompter, parseYesNo } from '../src/ui/prompt.js';
 import { runWizard } from '../src/ui/wizard.js';
 import { banner, LOGO } from '../src/ui/banner.js';
 import dashboard, { suggestNext, taskSummary } from '../src/commands/dashboard.js';
-import doctor, { parseVersion } from '../src/commands/doctor.js';
+import doctor, { diagnose, parseVersion } from '../src/commands/doctor.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mora-ui-'));
 const feed = (s) => { const i = new PassThrough(); i.end(s); return i; };
@@ -182,6 +182,25 @@ test('doctor --json is parseable and exit code follows failures', async () => {
   assert.equal(bad.ok, false);
   assert.ok(bad.checks.find((x) => x.id === 'config' && x.status === 'fail'));
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('doctor accepts a ready API-only native app while warning about missing external CLIs', async () => {
+  const root = tmp();
+  const cfg = defaultConfig({ project: 'api-only', lang: 'en', preset: 'duo' });
+  cfg.orchestrator = 'ollama';
+  scaffold(root, cfg);
+  const catalog = CLI_IDS.map((id) => ({ id, label: id, bin: id, installed: false }));
+  try {
+    const ready = await diagnose(root, { catalog, providerStatus: async () => ({ ready: true, detail: 'local' }) });
+    assert.equal(ready.ok, true);
+    assert.ok(ready.checks.some((check) => check.group === 'providers' && check.id === 'ollama' && check.status === 'ok'));
+    assert.ok(ready.checks.some((check) => check.group === 'clis' && check.status === 'warn'));
+    const offline = await diagnose(root, { catalog, providerStatus: async () => ({ ready: false, detail: 'offline' }) });
+    assert.equal(offline.ok, false);
+    assert.ok(offline.checks.some((check) => check.group === 'providers' && check.id === 'ollama' && check.status === 'fail'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('parseVersion extracts semver from noisy --version output', () => {

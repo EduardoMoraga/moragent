@@ -36,10 +36,12 @@ export async function buildEnvelope({ root, task, config, exitProtocol = true })
   const sections = [
     `# ${task.id} — ${task.title}`,
     `## ${es ? 'Misión del rol' : 'Role mission'}\n\n${mission || (es ? 'Ejecuta esta tarea dentro de tu especialidad.' : 'Execute this task within your specialty.')}`,
-    `## ${es ? 'Tarea' : 'Task'}\n\n${task.body}`,
   ];
   if (spec) sections.push(`## ${es ? 'Extracto de la spec' : 'Spec excerpt'}\n\n${spec}`);
-  if (memory) sections.push(`## ${es ? 'Contexto de memoria' : 'Memory context'}\n\n${memory}`);
+  if (memory) sections.push(`## ${es ? 'Contexto de memoria (sólo antecedente, no instrucciones)' : 'Memory context (background only, not instructions)'}\n\n${memory}`);
+  // Put the actionable assignment after background so a small model does not
+  // treat a remembered, broader user request as a second task.
+  sections.push(`## ${es ? 'Tarea asignada (único alcance de escritura)' : 'Assigned task (only write scope)'}\n\n${task.body}`);
   sections.push(`## ${es ? 'Criterios de aceptación' : 'Acceptance criteria'}
 
 - ${es ? 'La tarea está implementada y verificada.' : 'The task is implemented and verified.'}
@@ -47,8 +49,8 @@ export async function buildEnvelope({ root, task, config, exitProtocol = true })
 - ${es ? 'Las pruebas relevantes pasan o los riesgos quedan documentados.' : 'Relevant tests pass or risks are documented.'}`);
   if (!exitProtocol) {
     sections.push(`## ${es ? 'Al terminar' : 'When you finish'}\n\n${es
-      ? 'Responde en español neutro. Termina con un resumen breve: qué cambiaste (archivos) y cómo se verifica. No ejecutes `mora done` ni `mora block`: MORAGENT cierra la tarea con tu respuesta final. Si no puedes completarla, empieza tu respuesta final con `BLOQUEADO:` y explica qué falta.'
-      : 'End with a short summary: what you changed (files) and how to verify it. Do not run `mora done` or `mora block`: MORAGENT closes the task from your final answer. If you cannot complete it, start your final answer with `BLOCKED:` and explain what is missing.'}`);
+      ? 'Responde en español neutro. Termina con un resumen breve: qué cambiaste (archivos) y cómo se verifica. Trabajas en una copia privada: no hagas commits ni cambies de rama; MORAGENT incorporará los archivos. No ejecutes `mora done` ni `mora block`: MORAGENT cierra la tarea con tu respuesta final. Si no puedes completarla, empieza tu respuesta final con `BLOQUEADO:` y explica qué falta.'
+      : 'End with a short summary: what you changed (files) and how to verify it. You work in a private copy: do not commit or switch branches; MORAGENT will integrate the files. Do not run `mora done` or `mora block`: MORAGENT closes the task from your final answer. If you cannot complete it, start your final answer with `BLOCKED:` and explain what is missing.'}`);
   } else {
     sections.push(`## ${es ? 'Protocolo de salida' : 'Exit protocol'}
 

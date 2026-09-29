@@ -30,7 +30,7 @@ test('every provider exposes a never-throwing listModels function', () => {
   for (const provider of Object.values(PROVIDERS)) assert.equal(typeof provider.listModels, 'function', provider.id);
 });
 
-test('CLI model catalogs parse verified commands, use 3s timeouts and cache per process', async () => {
+test('CLI model catalogs parse verified commands, use bounded timeouts and cache per process', async () => {
   const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-codex-models-'));
   fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model = "gpt-configured"\n');
   process.env.CODEX_HOME = codexHome;
@@ -65,7 +65,7 @@ test('CLI model catalogs parse verified commands, use 3s timeouts and cache per 
 
     await PROVIDERS.agy.listModels();
     assert.equal(calls.filter((call) => call.command === 'agy').length, 1, 'catalog is cached');
-    assert.ok(calls.every((call) => call.options.timeoutMs === 3000));
+    assert.ok(calls.every((call) => call.options.timeoutMs === 8000));
     assert.deepEqual(calls.find((call) => call.command === 'agy').args, ['models']);
     assert.deepEqual(calls.find((call) => call.command === 'pi').args, ['--list-models']);
     assert.deepEqual(calls.find((call) => call.command === 'opencode').args, ['models']);
@@ -79,6 +79,35 @@ test('CLI model catalogs never throw and mark fallbacks as suggested', async () 
   const models = await PROVIDERS.agy.listModels();
   assert.ok(models.length > 0);
   assert.ok(models.every((model) => model.note === 'sugerido'));
+});
+
+test('CLI model catalogs await asynchronous probes', async () => {
+  setExec(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return { code: 0, stdout: 'gemini-pro\tGemini Pro\n', stderr: '' };
+  });
+  assert.deepEqual(await PROVIDERS.agy.listModels(), [{ id: 'gemini-pro', label: 'Gemini Pro' }]);
+});
+
+test('CLI model catalog retries after a transient failure instead of caching suggestions', async () => {
+  let attempts = 0;
+  setExec(() => ++attempts === 1
+    ? { code: 124, stdout: '', stderr: 'timeout' }
+    : { code: 0, stdout: 'gemini-live\tGemini Live\n', stderr: '' });
+  assert.ok((await PROVIDERS.agy.listModels()).every((model) => model.note === 'sugerido'));
+  assert.deepEqual(await PROVIDERS.agy.listModels(), [{ id: 'gemini-live', label: 'Gemini Live' }]);
+  assert.equal(attempts, 2);
+});
+
+test('API model catalog retries after a transient failure instead of caching suggestions', async () => {
+  process.env.OPENAI_API_KEY = 'test';
+  let attempts = 0;
+  setFetch(async () => ++attempts === 1
+    ? { ok: false, status: 503 }
+    : { ok: true, json: async () => ({ data: [{ id: 'gpt-live' }] }) });
+  assert.ok((await PROVIDERS.openai.listModels()).every((model) => model.note === 'sugerido'));
+  assert.deepEqual(await PROVIDERS.openai.listModels(), [{ id: 'gpt-live', label: 'gpt-live' }]);
+  assert.equal(attempts, 2);
 });
 
 test('API model catalogs use provider endpoints, normalize responses and cache fetches', async () => {

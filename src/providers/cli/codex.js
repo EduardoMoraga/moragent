@@ -12,6 +12,10 @@ const textFromItem = (item) => {
 };
 
 export function parseCodex(record, state) {
+  // Codex emits reasoning/progress as text too, but only an agent_message in a
+  // completed turn is an authoritative answer.
+  state.requireFinalText = true;
+  state.requireCompletion = true;
   const events = [];
   if (record.type === 'thread.started') {
     state.sessionId = record.thread_id || state.sessionId;
@@ -22,7 +26,10 @@ export function parseCodex(record, state) {
     // Codex also reports the input as a user_message item. It can contain the full task envelope,
     // but it is not assistant output and must never be rendered in the agent activity stream.
     const text = textFromItem(item);
-    if (text) events.push({ type: 'text', delta: text });
+    if (text) {
+      if (item.type === 'agent_message') state.finalText = text;
+      events.push({ type: 'text', delta: state.text ? `\n\n${text}` : text });
+    }
     if (item.type === 'command_execution') {
       events.push({ type: 'tool', id: item.id, name: 'command', input: { command: item.command || '' } });
       events.push({

@@ -12,7 +12,7 @@
   "scripts": {
     "build": "node scripts/build-plugin.js",
     "prepack": "node scripts/build-plugin.js",
-    "pack:smoke": "bash scripts/pack-smoke.sh",
+    "pack:smoke": "node scripts/pack-smoke.js",
     "test": "node scripts/test.js",
     "start": "node bin/mora.js"
   },

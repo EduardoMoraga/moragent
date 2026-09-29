@@ -11,6 +11,8 @@ test('COMMANDS registry includes all engine commands with valid schema', () => {
     'login',
     'orquestador',
     'modelo',
+    'idioma',
+    'recuperaciones',
     'equipo',
     'memoria',
     'plan',
@@ -96,6 +98,9 @@ test('findCommand resolves commands by name or alias, with or without leading sl
   assert.ok(deploy);
   assert.equal(deploy.name, 'tarea');
 
+  assert.equal(findCommand('/language')?.name, 'idioma');
+  assert.equal(findCommand('/recoveries')?.name, 'recuperaciones');
+
   const nonExistent = findCommand('desconocido');
   assert.equal(nonExistent, null);
 
@@ -150,7 +155,7 @@ test('welcomeLines renders 2-line logo and header fitting 60 cols', () => {
   // Line 3: project · orchestrator
   assert.ok(plain(lines[2]).includes('propinas · orquestador codex (gpt-5.6-sol)'));
   // Line 4: connected engines
-  assert.ok(plain(lines[3]).includes('conectados: claude ✓ codex ✓ agy ✓ pi ✓ ollama ✓'));
+  assert.ok(plain(lines[3]).includes('conectados: 5/5 · claude, codex, agy, +2 · /login'));
   // Line 5: tips
   assert.ok(plain(lines[4]).includes('pide algo o /tarea backend … · / comandos · Tab agentes'));
 });
@@ -189,7 +194,7 @@ test('welcomeLines handles English language correctly', () => {
 
   const lines = welcomeLines(state, { cols: 80 });
   assert.ok(plain(lines[2]).includes('my-project · orchestrator claude (sonnet-4)'));
-  assert.ok(plain(lines[3]).includes('connected: claude ✓ codex ○'));
+  assert.ok(plain(lines[3]).includes('connected: 1/2 · claude · /login'));
   assert.ok(plain(lines[4]).includes('ask or /task backend … · / commands · Tab agents'));
 });
 

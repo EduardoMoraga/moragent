@@ -25,6 +25,7 @@ test('createSession persists the exact initial schema with an atomic JSON write'
     assert.equal(session.title, 'Mi sesión');
     assert.equal(session.createdAt, session.updatedAt);
     assert.equal(session.provider, 'claude');
+    assert.equal(session.model, null);
     assert.equal(session.providerSessionId, null);
     assert.deepEqual(session.messages, []);
     assert.deepEqual(session.agents, {});
@@ -52,6 +53,7 @@ test('saveSession derives a bounded title before retaining the newest 500 messag
       ...session,
       updatedAt: '2000-01-01T00:00:00.000Z',
       providerSessionId: 'thread-1',
+      model: 'gpt-selected',
       messages,
       agents: { backend: { id: 'backend', status: 'done' } },
     });
@@ -62,6 +64,7 @@ test('saveSession derives a bounded title before retaining the newest 500 messag
     assert.equal(saved.messages[0].id, 'm10');
     assert.equal(saved.messages.at(-1).id, 'm509');
     assert.equal(saved.providerSessionId, 'thread-1');
+    assert.equal(saved.model, 'gpt-selected');
     assert.deepEqual(saved.agents.backend, { id: 'backend', status: 'done' });
     assert.ok(Date.parse(saved.updatedAt) > Date.parse('2000-01-01T00:00:00.000Z'));
     assert.equal(messages.length, 510, 'saving does not mutate the caller array');
@@ -102,6 +105,19 @@ test('loadSession accepts exact ids and only unique prefixes', () => {
     assert.equal(loadSession(root, 'prefix-'), null, 'ambiguous prefix is rejected');
     assert.equal(loadSession(root, '../prefix-one'), null, 'path traversal is rejected');
     assert.equal(loadSession(root, 'missing'), null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('loadSession accepts sessions saved before the model field existed', () => {
+  const root = tmp();
+  try {
+    const legacy = createSession(root, { provider: 'claude' });
+    delete legacy.model;
+    fs.writeFileSync(path.join(sessionDir(root), `${legacy.id}.json`), JSON.stringify(legacy));
+    assert.deepEqual(loadSession(root, legacy.id), legacy);
+    assert.equal(saveSession(root, legacy).model, null);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -169,4 +185,3 @@ test('scaffold adds sessions/ to the generated local-state gitignore', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
-

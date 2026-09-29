@@ -1,4 +1,5 @@
 import { plain, c as defaultColors } from '../core/log.js';
+import { terminalText } from './terminal-text.js';
 
 // Style words individually so ANSI escape sequences do not leak across wrapped lines
 function styleWords(text, styleFn) {
@@ -250,7 +251,7 @@ function renderTable(tableLines, max, colors) {
 
 export function renderMarkdown(text, maxWidth = 80, { c = defaultColors } = {}) {
   if (text == null) return [];
-  const str = String(text).normalize('NFC');
+  const str = terminalText(text).normalize('NFC');
   if (str === '') return [''];
 
   const max = Math.max(1, maxWidth | 0);

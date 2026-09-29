@@ -1,10 +1,28 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { run } from '../../core/exec.js';
+import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
+import readline from 'node:readline';
+import { Worker } from 'node:worker_threads';
+import { terminateTree } from '../../core/exec.js';
 import { MoragentError } from '../../core/errors.js';
-import { t } from '../../core/i18n.js';
+import { getLang, t } from '../../core/i18n.js';
 
 export const MAX_OUTPUT_BYTES = 20 * 1024; // 20 KB
+const MAX_EDIT_FILE_BYTES = 16 * 1024 * 1024;
+const BASH_TIMEOUT_MS = 120000;
+const DEFAULT_GREP_TIMEOUT_MS = 30000;
+const MAX_CAPTURE_BYTES = 1024 * 1024;
+
+function hasDirectoryEntry(target) {
+  try {
+    fs.lstatSync(target);
+    return true;
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false;
+    throw err;
+  }
+}
 
 export function truncateOutput(str, maxBytes = MAX_OUTPUT_BYTES) {
   if (typeof str !== 'string') str = String(str ?? '');
@@ -13,7 +31,11 @@ export function truncateOutput(str, maxBytes = MAX_OUTPUT_BYTES) {
   const notice = '\n... [output truncated to 20 KB / salida truncada a 20 KB]';
   const noticeBuf = Buffer.from(notice, 'utf8');
   const sliceLen = Math.max(0, maxBytes - noticeBuf.length);
-  const cut = buf.subarray(0, sliceLen).toString('utf8');
+  let validLen = sliceLen;
+  // If the next byte continues a multibyte code point, back up to its start.
+  // Decoding a partial character as U+FFFD would exceed the byte budget.
+  while (validLen > 0 && (buf[validLen] & 0xc0) === 0x80) validLen--;
+  const cut = buf.subarray(0, validLen).toString('utf8');
   return cut + notice;
 }
 
@@ -28,17 +50,18 @@ export function assertPathInside(root, targetPath) {
 
   // Relative path lexical check against resolved root
   const relLexical = path.relative(realRoot, targetResolved);
-  if (relLexical.startsWith('..') || path.isAbsolute(relLexical)) {
+  if (isOutside(relLexical)) {
     throw new MoragentError('PATH_OUTSIDE_ROOT',
       t(`La ruta "${targetPath}" escapa de la raíz del proyecto`,
         `Path "${targetPath}" escapes the project root`));
   }
 
-  // Symlink check: if target exists, resolve realpath
-  if (fs.existsSync(targetResolved)) {
+  // lstat also sees dangling symlinks, which existsSync hides. A broken link must
+  // never be treated as a fresh file because writeFileSync would follow it.
+  if (hasDirectoryEntry(targetResolved)) {
     const realTarget = fs.realpathSync(targetResolved);
     const relReal = path.relative(realRoot, realTarget);
-    if (relReal.startsWith('..') || path.isAbsolute(relReal)) {
+    if (isOutside(relReal)) {
       throw new MoragentError('PATH_OUTSIDE_ROOT',
         t(`El enlace simbólico "${targetPath}" apunta fuera de la raíz`,
           `Symlink "${targetPath}" resolves outside the project root`));
@@ -48,15 +71,15 @@ export function assertPathInside(root, targetPath) {
 
   // If target does not exist yet (e.g. write_file), check closest existing ancestor directory
   let curr = path.dirname(targetResolved);
-  while (!fs.existsSync(curr)) {
+  while (!hasDirectoryEntry(curr)) {
     const parent = path.dirname(curr);
     if (parent === curr) break;
     curr = parent;
   }
-  if (fs.existsSync(curr)) {
+  if (hasDirectoryEntry(curr)) {
     const realAncestor = fs.realpathSync(curr);
     const relAncestor = path.relative(realRoot, realAncestor);
-    if (relAncestor.startsWith('..') || path.isAbsolute(relAncestor)) {
+    if (isOutside(relAncestor)) {
       throw new MoragentError('PATH_OUTSIDE_ROOT',
         t(`La ruta de destino "${targetPath}" está en un directorio que escapa de la raíz`,
           `Destination path "${targetPath}" is within a directory that escapes the project root`));
@@ -66,17 +89,29 @@ export function assertPathInside(root, targetPath) {
   return targetResolved;
 }
 
+function isOutside(relativePath) {
+  return relativePath === '..' || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath);
+}
+
 function makeSummary(str, max = 200) {
   const clean = String(str || '').replace(/\s+/g, ' ').trim();
   if (clean.length <= max) return clean;
   return clean.slice(0, max - 3) + '...';
 }
 
+function oversizedEditResult(target) {
+  const output = t(
+    `Error: ${target} es demasiado grande para edit_file (máximo 16 MiB). Usa grep y divide la edición en un archivo más pequeño.`,
+    `Error: ${target} is too large for edit_file (16 MiB maximum). Use grep and split the edit into a smaller file.`,
+  );
+  return { ok: false, output, summary: makeSummary(output) };
+}
+
 // Canonical tool definitions
 export const TOOL_DEFINITIONS = [
   {
     name: 'read_file',
-    description: 'Read the contents of a file within the project root.',
+    description: 'Read a file within the project root by streaming. Use offset and limit for selected lines; output is capped at 20 KB.',
     parameters: {
       type: 'object',
       properties: {
@@ -89,14 +124,16 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'write_file',
-    description: 'Write content to a file within the project root. Creates parent directories if needed.',
+    description: 'Write a file within the project root. Provide either content, or lines plus final_newline for exact LF bytes without escape ambiguity. Creates parent directories if needed.',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Relative path to the file inside the project root' },
-        content: { type: 'string', description: 'The text content to write to the file' },
+        content: { type: 'string', description: 'Text to write verbatim; do not also provide lines or final_newline' },
+        lines: { type: 'array', items: { type: 'string' }, description: 'Alternative to content: exact text lines without embedded CR or LF characters' },
+        final_newline: { type: 'boolean', description: 'Required with lines: true appends exactly one final LF byte; false appends none' },
       },
-      required: ['path', 'content'],
+      required: ['path'],
     },
   },
   {
@@ -147,11 +184,12 @@ export const TOOL_DEFINITIONS = [
   },
 ];
 
-export function filterToolsForAutonomy(autonomy) {
-  if (autonomy === 'readonly') {
+export function filterToolsForAutonomy(autonomy = 'auto') {
+  if (autonomy === 'readonly' || autonomy === 'ask') {
     return TOOL_DEFINITIONS.filter((t) => ['read_file', 'list_dir', 'grep'].includes(t.name));
   }
-  return TOOL_DEFINITIONS;
+  if (autonomy === 'full') return TOOL_DEFINITIONS;
+  return TOOL_DEFINITIONS.filter((t) => t.name !== 'bash');
 }
 
 export function getAnthropicTools({ autonomy } = {}) {
@@ -196,6 +234,7 @@ export function getGeminiTools({ autonomy } = {}) {
         res.properties[k] = convertSchema(v);
       }
     }
+    if (schema.items) res.items = convertSchema(schema.items);
     if (schema.required) res.required = schema.required;
     return res;
   };
@@ -212,7 +251,51 @@ export function getGeminiTools({ autonomy } = {}) {
 }
 
 // Tool implementation handlers
-async function handleReadFile(args, root) {
+async function readSelectedLines(handle, startLine, endLine, maxBytes, signal) {
+  const input = handle.createReadStream({ highWaterMark: 64 * 1024, autoClose: false });
+  const chunks = [];
+  let bytes = 0;
+  let line = 1;
+  let done = false;
+  // Destroy without an Error: FileHandle streams may emit that error after the
+  // async iterator has settled, crashing the process on a late cancellation.
+  const abort = () => input.destroy();
+  const capture = (piece) => {
+    if (!piece.length) return;
+    const take = Math.min(piece.length, maxBytes - bytes);
+    if (take > 0) {
+      chunks.push(Buffer.from(piece.subarray(0, take)));
+      bytes += take;
+    }
+    if (take < piece.length) done = true;
+  };
+  signal?.addEventListener('abort', abort, { once: true });
+  try {
+    if (signal?.aborted) abort();
+    for await (const chunk of input) {
+      if (signal?.aborted) throw new Error('Aborted');
+      let pos = 0;
+      while (pos < chunk.length && !done) {
+        const newline = chunk.indexOf(10, pos);
+        const end = newline < 0 ? chunk.length : newline;
+        if (line >= startLine && line <= endLine) capture(chunk.subarray(pos, end));
+        if (newline < 0 || done) break;
+        if (line >= startLine && line < endLine) capture(Buffer.from('\n'));
+        line++;
+        pos = newline + 1;
+        if (line > endLine) done = true;
+      }
+      if (done) break;
+    }
+    if (signal?.aborted) throw new Error('Aborted');
+    return Buffer.concat(chunks).toString('utf8');
+  } finally {
+    signal?.removeEventListener('abort', abort);
+    input.destroy();
+  }
+}
+
+async function handleReadFile(args, root, signal) {
   const target = args.path || args.file_path;
   if (!target) {
     return { ok: false, output: 'Error: missing path parameter', summary: 'Missing path' };
@@ -221,25 +304,35 @@ async function handleReadFile(args, root) {
   if (!fs.existsSync(resolved)) {
     return { ok: false, output: `Error: File not found: ${target}`, summary: `File not found: ${target}` };
   }
-  const stat = fs.statSync(resolved);
-  if (stat.isDirectory()) {
-    return { ok: false, output: `Error: ${target} is a directory, not a file`, summary: `${target} is a directory` };
-  }
-
-  let text = fs.readFileSync(resolved, 'utf8');
   const offset = Number.parseInt(args.offset, 10);
   const limit = Number.parseInt(args.limit, 10);
-
-  if (!Number.isNaN(offset) || !Number.isNaN(limit)) {
-    const lines = text.split('\n');
-    const startIdx = !Number.isNaN(offset) && offset > 0 ? offset - 1 : 0;
-    const endIdx = !Number.isNaN(limit) && limit > 0 ? startIdx + limit : lines.length;
-    text = lines.slice(startIdx, endIdx).join('\n');
+  const startLine = !Number.isNaN(offset) && offset > 0 ? offset : 1;
+  const endLine = !Number.isNaN(limit) && limit > 0 ? startLine + limit - 1 : Infinity;
+  // O_NONBLOCK prevents a target swapped for a FIFO after path validation from
+  // hanging open(). Regular files ignore it. fstat checks the opened descriptor.
+  const handle = await fs.promises.open(resolved, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0));
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      return { ok: false, output: `Error: ${target} is not a regular file`, summary: `${target} is not a regular file` };
+    }
+    const tail = Buffer.alloc(2);
+    if (stat.size >= 2) await handle.read(tail, 0, 2, stat.size - 2);
+    const literalEscapedNewline = stat.size >= 2 && tail[0] === 92 && tail[1] === 110;
+    const warning = literalEscapedNewline ? 'WARNING: file ends with literal backslash + n characters, not a final LF newline.\n' : '';
+    const text = await readSelectedLines(handle, startLine, endLine, MAX_OUTPUT_BYTES - Buffer.byteLength(warning) + 1, signal);
+    const output = truncateOutput(`${warning}${text}`);
+    const summary = `Read ${target} (${Buffer.byteLength(text, 'utf8')} bytes shown${output.includes('[output truncated') ? ', truncated' : ''})`;
+    return { ok: true, output, summary: makeSummary(summary) };
+  } catch (error) {
+    if (signal?.aborted) {
+      const msg = t('Lectura cancelada.', 'Read cancelled.');
+      return { ok: false, output: msg, summary: msg };
+    }
+    throw error;
+  } finally {
+    await handle.close();
   }
-
-  const output = truncateOutput(text);
-  const summary = `Read ${target} (${Buffer.byteLength(text, 'utf8')} bytes)`;
-  return { ok: true, output, summary: makeSummary(summary) };
 }
 
 async function handleWriteFile(args, root) {
@@ -247,15 +340,38 @@ async function handleWriteFile(args, root) {
   if (!target) {
     return { ok: false, output: 'Error: missing path parameter', summary: 'Missing path' };
   }
-  const content = String(args.content ?? '');
+  const hasContent = Object.hasOwn(args, 'content');
+  const hasLines = Object.hasOwn(args, 'lines');
+  if (hasContent === hasLines || (hasContent && Object.hasOwn(args, 'final_newline'))) {
+    return { ok: false, output: 'Error: provide either content or lines with final_newline, not both', summary: 'Ambiguous or missing file content' };
+  }
+  let content;
+  if (hasContent) {
+    if (typeof args.content !== 'string') {
+      return { ok: false, output: 'Error: content must be a string (use "" to write an empty file)', summary: 'Missing or invalid content' };
+    }
+    content = args.content;
+  } else {
+    if (!Array.isArray(args.lines) || args.lines.some((line) => typeof line !== 'string' || /[\r\n]/.test(line))
+        || typeof args.final_newline !== 'boolean') {
+      return { ok: false, output: 'Error: lines must be strings without CR/LF and final_newline must be a boolean', summary: 'Invalid exact lines' };
+    }
+    content = args.lines.join('\n') + (args.final_newline ? '\n' : '');
+  }
   const resolved = assertPathInside(root, target);
+  if (hasDirectoryEntry(resolved) && !fs.statSync(resolved).isFile()) {
+    return { ok: false, output: `Error: ${target} is not a regular file`, summary: `${target} is not a regular file` };
+  }
 
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
   fs.writeFileSync(resolved, content, 'utf8');
 
   const bytes = Buffer.byteLength(content, 'utf8');
-  const summary = `Wrote ${bytes} bytes to ${target}`;
-  return { ok: true, output: `Successfully wrote ${bytes} bytes to ${target}`, summary: makeSummary(summary) };
+  const newline = content.endsWith('\n') ? 'yes' : 'no';
+  const escapedWarning = content.endsWith('\\n') && !content.endsWith('\n')
+    ? ' WARNING: the final backslash + n are literal characters, not a newline.' : '';
+  const summary = `Wrote ${bytes} bytes to ${target}; final LF newline: ${newline}.${escapedWarning}`;
+  return { ok: true, output: `Successfully wrote ${bytes} bytes to ${target}. Final LF newline: ${newline}.${escapedWarning}`, summary: makeSummary(summary) };
 }
 
 async function handleEditFile(args, root) {
@@ -264,15 +380,23 @@ async function handleEditFile(args, root) {
     return { ok: false, output: 'Error: missing path parameter', summary: 'Missing path' };
   }
   const oldStr = args.old_string ?? args.old_str ?? args.find ?? args.target;
-  const newStr = args.new_string ?? args.new_str ?? args.replace ?? '';
-  if (oldStr === undefined || oldStr === null) {
-    return { ok: false, output: 'Error: missing old_string parameter', summary: 'Missing old_string' };
+  const newStr = args.new_string ?? args.new_str ?? args.replace;
+  if (typeof oldStr !== 'string' || oldStr.length === 0) {
+    return { ok: false, output: 'Error: old_string must be a nonempty string', summary: 'Missing or invalid old_string' };
+  }
+  if (typeof newStr !== 'string') {
+    return { ok: false, output: 'Error: new_string must be a string (use "" to remove text)', summary: 'Missing or invalid new_string' };
   }
 
   const resolved = assertPathInside(root, target);
   if (!fs.existsSync(resolved)) {
     return { ok: false, output: `Error: File not found: ${target}`, summary: `File not found: ${target}` };
   }
+  const stat = fs.statSync(resolved);
+  if (!stat.isFile()) {
+    return { ok: false, output: `Error: ${target} is not a regular file`, summary: `${target} is not a regular file` };
+  }
+  if (stat.size > MAX_EDIT_FILE_BYTES) return oversizedEditResult(target);
 
   const content = fs.readFileSync(resolved, 'utf8');
   const count = content.split(oldStr).length - 1;
@@ -292,7 +416,9 @@ async function handleEditFile(args, root) {
     };
   }
 
-  const updated = content.replace(oldStr, newStr);
+  // A string replacement expands $&, $$, $` and $'. A callback keeps model-supplied
+  // code and template text literal, as the edit_file contract promises.
+  const updated = content.replace(oldStr, () => newStr);
   fs.writeFileSync(resolved, updated, 'utf8');
 
   const summary = `Edited ${target}`;
@@ -320,12 +446,14 @@ async function handleListDir(args, root) {
 
   const lines = entries.map((ent) => {
     const isDir = ent.isDirectory();
-    const prefix = isDir ? '[DIR] ' : '[FILE]';
+    const prefix = isDir ? '[DIR]' : ent.isSymbolicLink() ? '[LINK]' : ent.isFile() ? '[FILE]' : '[OTHER]';
     let sizeStr = '';
-    if (!isDir) {
+    if (ent.isFile()) {
       try {
-        const s = fs.statSync(path.join(resolved, ent.name));
-        sizeStr = ` (${s.size} B)`;
+        // statSync would follow a link outside root, disclosing target metadata.
+        // lstatSync also handles a file replaced by a symlink after readdir.
+        const s = fs.lstatSync(path.join(resolved, ent.name));
+        if (s.isFile()) sizeStr = ` (${s.size} B)`;
       } catch {
         // ignore
       }
@@ -338,7 +466,7 @@ async function handleListDir(args, root) {
   return { ok: true, output, summary: makeSummary(summary) };
 }
 
-async function handleGrep(args, root) {
+export async function searchFiles(args, root, signal) {
   const pattern = args.pattern;
   if (!pattern) {
     return { ok: false, output: 'Error: missing pattern parameter', summary: 'Missing pattern' };
@@ -358,75 +486,203 @@ async function handleGrep(args, root) {
   }
 
   const matches = [];
+  const maxMatches = 1000;
+  let stoppedAtLimit = false;
   const realRoot = fs.existsSync(root) ? fs.realpathSync(path.resolve(root)) : path.resolve(root);
+  const checkCancelled = () => { if (signal?.aborted) throw new Error('Aborted'); };
 
-  function walk(currDir) {
+  async function scanFile(file) {
+    checkCancelled();
+    const input = fs.createReadStream(file, { encoding: 'utf8' });
+    const lines = readline.createInterface({ input, crlfDelay: Infinity });
+    const abort = () => input.destroy(new Error('Aborted'));
+    signal?.addEventListener('abort', abort, { once: true });
+    const relPath = path.relative(root, file).split(path.sep).join('/');
+    let lineNo = 0;
+    try {
+      for await (const line of lines) {
+        checkCancelled();
+        lineNo++;
+        if (!regex.test(line)) continue;
+        matches.push(`${relPath}:${lineNo}: ${line}`);
+        if (matches.length >= maxMatches) {
+          stoppedAtLimit = true;
+          break;
+        }
+      }
+    } catch (error) {
+      if (signal?.aborted || !error?.code) throw error;
+      // Unreadable files are skipped, as in the prior synchronous search.
+    } finally {
+      signal?.removeEventListener('abort', abort);
+      lines.close();
+      input.destroy();
+    }
+  }
+
+  async function walk(currDir) {
+    checkCancelled();
     let entries;
     try {
-      entries = fs.readdirSync(currDir, { withFileTypes: true });
+      entries = await fs.promises.readdir(currDir, { withFileTypes: true });
     } catch {
+      checkCancelled();
       return;
     }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const ent of entries) {
+      checkCancelled();
+      if (stoppedAtLimit) break;
       if (ent.name === '.git' || ent.name === 'node_modules' || ent.name === '.moragent') continue;
       const full = path.join(currDir, ent.name);
       if (ent.isDirectory()) {
+        let realCurr;
         try {
-          const realCurr = fs.realpathSync(full);
-          const relReal = path.relative(realRoot, realCurr);
-          if (relReal.startsWith('..') || path.isAbsolute(relReal)) continue;
-          walk(full);
+          realCurr = await fs.promises.realpath(full);
         } catch {
-          // ignore
+          checkCancelled();
+          continue;
         }
+        if (isOutside(path.relative(realRoot, realCurr))) continue;
+        await walk(full);
       } else if (ent.isFile()) {
-        try {
-          const content = fs.readFileSync(full, 'utf8');
-          const lines = content.split('\n');
-          const relPath = path.relative(root, full).split(path.sep).join('/'); // models see forward slashes on every OS
-          for (let i = 0; i < lines.length; i++) {
-            if (regex.test(lines[i])) {
-              matches.push(`${relPath}:${i + 1}: ${lines[i]}`);
-              if (matches.length >= 1000) break;
-            }
-          }
-        } catch {
-          // Skip binary files or unreadable files
-        }
+        await scanFile(full);
       }
     }
   }
 
-  const stat = fs.statSync(resolved);
-  if (stat.isDirectory()) {
-    walk(resolved);
-  } else {
-    try {
-      const content = fs.readFileSync(resolved, 'utf8');
-      const lines = content.split('\n');
-      const relPath = path.relative(root, resolved).split(path.sep).join('/');
-      for (let i = 0; i < lines.length; i++) {
-        if (regex.test(lines[i])) {
-          matches.push(`${relPath}:${i + 1}: ${lines[i]}`);
-        }
-      }
-    } catch {
-      // ignore
+  const stat = await fs.promises.stat(resolved);
+  if (!stat.isDirectory() && !stat.isFile()) {
+    return { ok: false, output: `Error: ${target} is not a regular file or directory`, summary: `${target} is not a regular file or directory` };
+  }
+  try {
+    if (stat.isDirectory()) await walk(resolved);
+    else await scanFile(resolved);
+  } catch (error) {
+    if (signal?.aborted) {
+      const msg = t('Búsqueda cancelada.', 'Search cancelled.');
+      return { ok: false, output: msg, summary: msg };
     }
+    throw error;
   }
 
   const rawOutput = matches.length > 0 ? matches.join('\n') : `No matches found for "${pattern}"`;
-  const output = truncateOutput(rawOutput);
+  const limitNotice = stoppedAtLimit ? '\n... [search stopped after 1000 matches / búsqueda detenida tras 1000 coincidencias]' : '';
+  const output = truncateOutput(rawOutput, MAX_OUTPUT_BYTES - Buffer.byteLength(limitNotice)) + limitNotice;
   const summary = `Found ${matches.length} matches for "${pattern}"`;
   return { ok: true, output, summary: makeSummary(summary) };
 }
 
-async function handleBash(args, root, autonomy) {
-  if (autonomy === 'ask') {
+function runGrepWorker(args, root, signal) {
+  const configured = Number(process.env.MORAGENT_GREP_TIMEOUT_MS);
+  const timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_GREP_TIMEOUT_MS;
+  return new Promise((resolve, reject) => {
+    let worker;
+    try {
+      worker = new Worker(new URL('./grep-worker.js', import.meta.url), { workerData: { args, root, lang: getLang() }, execArgv: [] });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    let settled = false;
+    let timeout;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
+      worker.terminate().catch(() => {});
+      resolve(result);
+    };
+    const abort = () => {
+      const msg = t('Búsqueda cancelada.', 'Search cancelled.');
+      finish({ ok: false, output: msg, summary: msg });
+    };
+    worker.once('message', finish);
+    worker.once('error', (error) => finish({ ok: false, output: `Error: ${error.message}`, summary: 'Search worker failed' }));
+    worker.once('exit', (code) => finish({ ok: false, output: `Error: search worker exited (${code})`, summary: 'Search worker exited' }));
+    signal?.addEventListener('abort', abort, { once: true });
+    timeout = setTimeout(() => {
+      const msg = t(`Búsqueda excedió el límite de ${timeoutMs} ms.`, `Search timed out after ${timeoutMs} ms.`);
+      finish({ ok: false, output: msg, summary: msg });
+    }, timeoutMs);
+    timeout.unref?.();
+    if (signal?.aborted) abort();
+  });
+}
+
+function runShell(command, root, signal) {
+  return new Promise((resolve) => {
+    const isWin = process.platform === 'win32';
+    const file = isWin ? 'cmd.exe' : 'bash';
+    const argv = isWin ? ['/d', '/s', '/c', command] : ['-c', command];
+    let child;
+    let stdout = '';
+    let stderr = '';
+    const stdoutDecoder = new StringDecoder('utf8');
+    const stderrDecoder = new StringDecoder('utf8');
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let cancelled = false;
+    let timedOut = false;
+    let settled = false;
+    let forceTimer;
+    let timeout;
+
+    const capture = (chunk, stream) => {
+      const bytes = stream === 'stdout' ? stdoutBytes : stderrBytes;
+      const remaining = Math.max(0, MAX_CAPTURE_BYTES - bytes);
+      const text = (stream === 'stdout' ? stdoutDecoder : stderrDecoder).write(chunk.subarray(0, remaining));
+      if (stream === 'stdout') { stdout += text; stdoutBytes += chunk.length; }
+      else { stderr += text; stderrBytes += chunk.length; }
+    };
+    const stop = () => {
+      terminateTree(child);
+      if (!isWin) {
+        forceTimer = setTimeout(() => terminateTree(child, { force: true }), 1000);
+        forceTimer.unref?.();
+      }
+    };
+    const abort = () => { cancelled = true; stop(); };
+    const finish = (code, error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(forceTimer);
+      signal?.removeEventListener('abort', abort);
+      stdout += stdoutDecoder.end();
+      stderr += stderrDecoder.end();
+      resolve({ code, stdout, stderr, cancelled, timedOut, error });
+    };
+
+    try {
+      child = spawn(file, argv, {
+        cwd: root,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        detached: !isWin,
+      });
+    } catch (error) {
+      finish(127, error);
+      return;
+    }
+    child.stdout.on('data', (chunk) => capture(chunk, 'stdout'));
+    child.stderr.on('data', (chunk) => capture(chunk, 'stderr'));
+    child.once('error', (error) => finish(127, error));
+    child.once('close', (code) => finish(code ?? 1));
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    timeout = setTimeout(() => { timedOut = true; stop(); }, BASH_TIMEOUT_MS);
+    timeout.unref?.();
+  });
+}
+
+async function handleBash(args, root, autonomy, signal) {
+  if (autonomy !== 'full') {
     return {
       ok: false,
-      output: 'Refused: bash execution is not permitted in "ask" autonomy mode / Rechazado: ejecución de bash no permitida en modo de autonomía "ask"',
-      summary: 'Refused: bash requires auto autonomy',
+      output: t('Rechazado: bash requiere autonomía "full" en los proveedores API; el shell no tiene sandbox.', 'Refused: bash requires "full" autonomy for API providers; the shell is not sandboxed.'),
+      summary: 'Refused: bash requires full autonomy',
     };
   }
 
@@ -435,23 +691,31 @@ async function handleBash(args, root, autonomy) {
     return { ok: false, output: 'Error: missing command parameter', summary: 'Missing command' };
   }
 
-  const isWin = process.platform === 'win32';
-  const r = isWin
-    ? run('cmd.exe', ['/d', '/s', '/c', command], { cwd: root, timeoutMs: 120000 })
-    : run('bash', ['-c', command], { cwd: root, timeoutMs: 120000 });
+  const r = await runShell(command, root, signal);
 
-  const raw = [r.stdout, r.stderr].filter(Boolean).join('\n').trim();
+  if (r.cancelled || r.timedOut) {
+    const output = r.cancelled
+      ? t('Comando cancelado.', 'Command cancelled.')
+      : t('Comando excedió el límite de 120 segundos.', 'Command exceeded the 120-second limit.');
+    return { ok: false, output, summary: output };
+  }
+
+  const raw = [r.stdout, r.stderr || r.error?.message].filter(Boolean).join('\n').trim();
   const output = truncateOutput(raw || `(Process exited with code ${r.code})`);
   const summary = makeSummary(`Exit ${r.code}: ${command.slice(0, 60)}`);
   return { ok: r.code === 0, output, summary };
 }
 
-export async function executeTool(name, args = {}, { root, autonomy = 'auto' } = {}) {
+export async function executeTool(name, args = {}, { root, autonomy = 'auto', signal, protectedOtherPaths = [] } = {}) {
   try {
-    if (autonomy === 'readonly' && (name === 'write_file' || name === 'edit_file' || name === 'bash')) {
+    if (signal?.aborted) {
+      const msg = t('Ejecución cancelada.', 'Run cancelled.');
+      return { ok: false, output: msg, summary: msg };
+    }
+    if (['readonly', 'ask'].includes(autonomy) && (name === 'write_file' || name === 'edit_file' || name === 'bash')) {
       const msg = t(
-        `Rechazado: la herramienta "${name}" no está permitida en modo de autonomía "readonly"`,
-        `Refused: tool "${name}" is not permitted in "readonly" autonomy mode`
+        `Rechazado: la herramienta "${name}" no está permitida en modo de autonomía "${autonomy}"`,
+        `Refused: tool "${name}" is not permitted in "${autonomy}" autonomy mode`
       );
       return {
         ok: false,
@@ -459,10 +723,21 @@ export async function executeTool(name, args = {}, { root, autonomy = 'auto' } =
         summary: makeSummary(`Refused in readonly: ${name}`),
       };
     }
+    if (['write_file', 'edit_file'].includes(name) && protectedOtherPaths.length) {
+      const target = assertPathInside(root, args.path || args.file_path);
+      const relative = path.relative(fs.realpathSync(root), target).split(path.sep).join('/');
+      if (protectedOtherPaths.includes(relative)) {
+        const msg = t(
+          `Rechazado: "${relative}" está asignado a otra tarea; completa sólo tu archivo.`,
+          `Refused: "${relative}" belongs to another task; complete only your assigned file.`,
+        );
+        return { ok: false, code: 'TASK_SCOPE', output: msg, summary: msg };
+      }
+    }
 
     switch (name) {
       case 'read_file':
-        return await handleReadFile(args, root);
+        return await handleReadFile(args, root, signal);
       case 'write_file':
         return await handleWriteFile(args, root);
       case 'edit_file':
@@ -470,9 +745,9 @@ export async function executeTool(name, args = {}, { root, autonomy = 'auto' } =
       case 'list_dir':
         return await handleListDir(args, root);
       case 'grep':
-        return await handleGrep(args, root);
+        return await runGrepWorker(args, root, signal);
       case 'bash':
-        return await handleBash(args, root, autonomy);
+        return await handleBash(args, root, autonomy, signal);
       default:
         return {
           ok: false,

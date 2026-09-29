@@ -26,9 +26,10 @@ export default {
     const id = argv._[0];
     const reason = argv.flags.reason;
     if (!id || typeof reason !== 'string' || !reason.trim()) throw new MoragentError('USAGE', this.usage);
-    getTask(root, id);
+    const before = getTask(root, id);
+    // Keep the terminal task status as the completion barrier for waiters.
+    await remember(root, before, reason.trim());
     const task = updateTask(root, id, { status: 'blocked', result: reason.trim() });
-    await remember(root, task, reason.trim());
     await refreshBrain(root);
     if (ctx.json) json({ ok: true, task });
     else warn(t(`${task.id} bloqueada: ${reason.trim()}`, `${task.id} blocked: ${reason.trim()}`));

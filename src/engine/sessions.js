@@ -20,6 +20,7 @@ function isSession(value, expectedId = null) {
     && validDate(value.createdAt)
     && validDate(value.updatedAt)
     && (value.provider === null || typeof value.provider === 'string')
+    && (value.model === undefined || value.model === null || typeof value.model === 'string')
     && (value.providerSessionId === null || typeof value.providerSessionId === 'string')
     && Array.isArray(value.messages)
     && isObject(value.agents);
@@ -56,7 +57,7 @@ function resolveId(root, id) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-export function createSession(root, { title = '', provider = null } = {}) {
+export function createSession(root, { title = '', provider = null, model = null } = {}) {
   const dir = ensureDir(sessionsDir(root));
   let id;
   do { id = randomUUID(); } while (fs.existsSync(path.join(dir, `${id}.json`)));
@@ -67,6 +68,7 @@ export function createSession(root, { title = '', provider = null } = {}) {
     createdAt: at,
     updatedAt: at,
     provider: typeof provider === 'string' ? provider : null,
+    model: typeof model === 'string' ? model : null,
     providerSessionId: null,
     messages: [],
     agents: {},
@@ -89,6 +91,7 @@ export function saveSession(root, session) {
     createdAt: validDate(session.createdAt) ? session.createdAt : now,
     updatedAt: now,
     provider: typeof session.provider === 'string' ? session.provider : null,
+    model: typeof session.model === 'string' ? session.model : null,
     providerSessionId: typeof session.providerSessionId === 'string' ? session.providerSessionId : null,
     messages: messages.slice(-MAX_MESSAGES),
     agents: isObject(session.agents) ? session.agents : {},

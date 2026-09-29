@@ -1,4 +1,5 @@
 import { autonomyArgsFor } from '../../crew/adapters.js';
+import { t } from '../../core/i18n.js';
 import { cliStatus, jsonOutput } from './status.js';
 import { resultOk, runStream, summary, usageEvent } from './stream.js';
 import { makeCliModelLister, parsePiModels, suggestedModels } from './models.js';
@@ -8,7 +9,15 @@ const textFrom = (message) => (message?.content || [])
   .map((part) => part.text || '')
   .join('');
 
+const completedAssistant = (message) => !!message && !message.errorMessage
+  && (!message?.stopReason || message.stopReason === 'stop');
+
+const assistantError = (message) => summary(message?.errorMessage
+  || t(`Pi terminó sin completar el turno (${message?.stopReason || 'desconocido'}).`,
+    `Pi ended without completing the turn (${message?.stopReason || 'unknown'}).`));
+
 export function parsePi(record, state) {
+  state.requireCompletion = true;
   const events = [];
   if (record.type === 'session') {
     state.sessionId = record.id || state.sessionId;
@@ -32,17 +41,23 @@ export function parsePi(record, state) {
     summary: summary(record.result || record.error),
   });
   if (record.type === 'message_end' && record.message?.role === 'assistant') {
+    if (!completedAssistant(record.message)) state.error = assistantError(record.message);
     if (!state.text) {
       const text = textFrom(record.message);
       if (text) events.push({ type: 'text', delta: text });
     }
     if (record.message.usage) events.push(usageEvent(record.message.usage));
   }
+  if (record.type === 'turn_end' && record.message?.role === 'assistant' && !completedAssistant(record.message)) {
+    state.error = assistantError(record.message);
+  }
   if (record.type === 'agent_end') {
     const assistant = [...(record.messages || [])].reverse().find((message) => message.role === 'assistant');
     state.finalText = textFrom(assistant) || state.text;
-    state.ok = !record.error && !record.willRetry;
-    state.error = record.error ? summary(record.error) : null;
+    state.ok = !record.error && !record.willRetry && completedAssistant(assistant);
+    state.error = state.ok ? null : summary(record.error || (record.willRetry
+      ? t('Pi solicitó un reintento sin completar el turno.', 'Pi requested a retry without completing the turn.')
+      : assistantError(assistant)));
   }
   return events;
 }

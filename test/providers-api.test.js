@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 
 import {
   getKey,
   setKey,
+  setEndpoint,
   removeKey,
   listKeys,
   maskKey,
@@ -26,13 +28,354 @@ import {
 import {
   setFetch,
   resetFetch,
+  runApiLoop,
 } from '../src/providers/api/loop.js';
 
-import { anthropic } from '../src/providers/api/anthropic.js';
-import { openai } from '../src/providers/api/openai.js';
+import { anthropic, anthropicAdapter } from '../src/providers/api/anthropic.js';
+import { openai, openaiAdapter } from '../src/providers/api/openai.js';
 import { openrouter } from '../src/providers/api/openrouter.js';
 import { ollama } from '../src/providers/api/ollama.js';
-import { google } from '../src/providers/api/google.js';
+import { google, googleAdapter } from '../src/providers/api/google.js';
+import { resetApiModelCache } from '../src/providers/api/models.js';
+import { getLang, setLang } from '../src/core/i18n.js';
+
+test('API adapters omit tool declarations for a tool-free recovery turn', async () => {
+  const cases = [
+    [openaiAdapter, { choices: [{ message: { role: 'assistant', content: 'ready' } }] }],
+    [anthropicAdapter, { content: [{ type: 'text', text: 'ready' }] }],
+    [googleAdapter, { candidates: [{ content: { role: 'model', parts: [{ text: 'ready' }] } }] }],
+  ];
+  try {
+    for (const [adapter, response] of cases) {
+      let body;
+      setFetch(async (_url, options) => {
+        body = JSON.parse(options.body);
+        return { ok: true, json: async () => response };
+      });
+      const result = await runApiLoop({ providerId: adapter.id, adapter, root: os.tmpdir(), prompt: 'Reply ready', apiKey: 'test-key', autonomy: 'readonly', toolsEnabled: false });
+      assert.equal(result.ok, true, adapter.id);
+      assert.equal(Object.hasOwn(body, 'tools'), false, `${adapter.id}: tool declarations must be absent`);
+    }
+  } finally { resetFetch(); }
+});
+
+test('API event logs are private even with a permissive process umask', { skip: process.platform === 'win32' }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-api-private-log-'));
+  const previousUmask = process.umask(0o022);
+  try {
+    setFetch(async () => ({ ok: true, json: async () => ({ choices: [{ message: { role: 'assistant', content: 'done' } }] }) }));
+    const logFile = path.join(root, 'events.log');
+    const result = await runApiLoop({ providerId: 'openai', adapter: openaiAdapter, root, prompt: 'Reply done', apiKey: 'test-key', logFile, toolsEnabled: false });
+    assert.equal(result.ok, true);
+    assert.equal(fs.statSync(logFile).mode & 0o777, 0o600);
+  } finally {
+    process.umask(previousUmask);
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('API event logs stay within the configured byte cap and retain their latest event', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-api-bounded-log-'));
+  try {
+    setFetch(async () => ({ ok: true, json: async () => ({ choices: [{ message: { role: 'assistant', content: 'X'.repeat(512) } }] }) }));
+    const logFile = path.join(root, 'events.log');
+    const result = await runApiLoop({ providerId: 'openai', adapter: openaiAdapter, root, prompt: 'Reply', apiKey: 'test-key', logFile, maxLogBytes: 256, toolsEnabled: false });
+    assert.equal(result.ok, true);
+    const log = fs.readFileSync(logFile, 'utf8');
+    assert.ok(Buffer.byteLength(log) <= 256);
+    assert.match(log, /earlier log data omitted/);
+    assert.match(log, /"type":"done"/);
+    for (const line of log.split('\n').filter((entry) => entry.startsWith('{'))) assert.doesNotThrow(() => JSON.parse(line));
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a tool call returned during a tool-free API turn is rejected before execution', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-no-tools-'));
+  try {
+    setFetch(async () => ({ ok: true, json: async () => ({ choices: [{ message: {
+      role: 'assistant', content: '', tool_calls: [{ id: 'unexpected', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'unsafe.txt', content: 'unsafe' }) } }],
+    } }] }) }));
+    const result = await runApiLoop({ providerId: 'openai', adapter: openaiAdapter, root, prompt: 'Do not call tools', apiKey: 'test-key', autonomy: 'readonly', toolsEnabled: false });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /tools were disabled|herramientas estaban desactivadas/);
+    assert.deepEqual(fs.readdirSync(root), []);
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('API loop does not report success for an empty model response', async () => {
+  const providers = [
+    [openai, { choices: [] }],
+    [anthropic, { content: [] }],
+    [google, { candidates: [] }],
+    [openai, { error: { message: 'model unavailable' } }],
+    [google, { promptFeedback: { blockReason: 'SAFETY' }, candidates: [] }],
+  ];
+  try {
+    for (const [provider, response] of providers) {
+      const events = [];
+      setFetch(async () => ({ ok: true, status: 200, json: async () => response }));
+      const result = await provider.run({
+        root: os.tmpdir(), prompt: 'Say hello', apiKey: 'test-key',
+        onEvent: (event) => events.push(event),
+      });
+      assert.equal(result.ok, false, provider.id);
+      assert.match(result.error, /texto ni herramientas|neither text nor tools/);
+      if (response.error) assert.match(result.error, /model unavailable/);
+      if (response.promptFeedback) assert.match(result.error, /SAFETY/);
+      assert.equal(events.filter((event) => event.type === 'done').length, 1);
+      assert.equal(events.at(-1).ok, false);
+    }
+  } finally {
+    resetFetch();
+  }
+});
+
+test('API loop rejects text stopped by a token limit or response filter', async () => {
+  const cases = [
+    [openai, { choices: [{ finish_reason: 'length', message: { role: 'assistant', content: 'Partial answer' } }], usage: { prompt_tokens: 7, completion_tokens: 9 } }, 'length'],
+    [openai, { choices: [{ finish_reason: 'content_filter', message: { role: 'assistant', content: 'Partial answer' } }] }, 'content_filter'],
+    [openai, { choices: [{ finish_reason: 'upstream_error', message: { role: 'assistant', content: 'Partial answer' } }] }, 'upstream_error'],
+    [anthropic, { stop_reason: 'max_tokens', content: [{ type: 'text', text: 'Partial answer' }] }, 'max_tokens'],
+    [anthropic, { stop_reason: 'upstream_error', content: [{ type: 'text', text: 'Partial answer' }] }, 'upstream_error'],
+    [anthropic, { stop_reason: 'tool_use', content: [{ type: 'text', text: 'Partial answer' }] }, 'tool_use'],
+    [openai, { choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: 'Partial answer' } }] }, 'tool_calls'],
+    [google, { candidates: [{ finishReason: 'MAX_TOKENS', content: { role: 'model', parts: [{ text: 'Partial answer' }] } }] }, 'MAX_TOKENS'],
+    [google, { candidates: [{ finishReason: 'SAFETY', content: { role: 'model', parts: [{ text: 'Partial answer' }] } }] }, 'SAFETY'],
+  ];
+  try {
+    for (const [provider, response, reason] of cases) {
+      const events = [];
+      setFetch(async () => ({ ok: true, status: 200, json: async () => response }));
+      const result = await provider.run({ root: os.tmpdir(), prompt: 'Finish the task', apiKey: 'test-key', onEvent: (event) => events.push(event) });
+      assert.equal(result.ok, false, `${provider.id}: ${reason}`);
+      assert.match(result.error, new RegExp(reason));
+      if (provider.id === 'openai' && reason === 'length') assert.deepEqual(result.usage, { input: 7, output: 9, costUsd: null });
+      assert.equal(events.at(-1).type, 'done');
+      assert.equal(events.at(-1).ok, false);
+    }
+  } finally {
+    resetFetch();
+  }
+});
+
+test('API loop never executes a tool from a truncated response', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-truncated-tool-'));
+  try {
+    setFetch(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ finish_reason: 'length', message: {
+        role: 'assistant', content: 'Starting a file',
+        tool_calls: [{ id: 'partial_write', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'should-not-exist.txt', content: 'partial' }) } }],
+      } }] }),
+    }));
+    const result = await openai.run({ root, prompt: 'Create a file', apiKey: 'test-key', autonomy: 'auto' });
+    assert.equal(result.ok, false);
+    assert.deepEqual(fs.readdirSync(root), []);
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('OpenAI-compatible loop never executes tools under an unknown explicit finish reason', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-unknown-finish-'));
+  try {
+    setFetch(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ finish_reason: 'upstream_error', message: {
+        role: 'assistant', content: 'Writing',
+        tool_calls: [{ id: 'write', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'should-not-exist.txt', content: 'partial' }) } }],
+      } }] }),
+    }));
+    const result = await openai.run({ root, prompt: 'Create a file', apiKey: 'test-key', autonomy: 'auto' });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /upstream_error/);
+    assert.deepEqual(fs.readdirSync(root), []);
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Gemini omits a function-response ID when the server supplied no call ID', () => {
+  const state = googleAdapter.initConversation({ prompt: 'Read a file' });
+  const parsed = googleAdapter.parseResponse({ candidates: [{ content: { role: 'model', parts: [
+    { functionCall: { name: 'read_file', args: { path: 'note.txt' } } },
+  ] }, finishReason: 'STOP' }] });
+  assert.equal(parsed.toolCalls[0].id, undefined);
+  googleAdapter.appendAssistant({ state, parsed, rawMessage: parsed.rawAssistantMessage });
+  googleAdapter.appendToolResult({ state, callId: parsed.toolCalls[0].id, toolName: 'read_file', result: { ok: true, output: 'note' } });
+  assert.equal(Object.hasOwn(state.contents.at(-1).parts[0].functionResponse, 'id'), false);
+});
+
+test('OpenAI-compatible text content parts are joined as plain text', async () => {
+  try {
+    setFetch(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: {
+        role: 'assistant', content: [
+          { type: 'text', text: 'Primera línea' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } },
+          { type: 'text', text: 'Second line' },
+        ],
+      } }] }),
+    }));
+    const result = await openai.run({ root: os.tmpdir(), prompt: 'Reply', apiKey: 'test-key' });
+    assert.equal(result.ok, true);
+    assert.equal(result.text, 'Primera línea\nSecond line');
+  } finally {
+    resetFetch();
+  }
+});
+
+test('API loop final answer supersedes provisional text emitted before tool calls', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-api-final-answer-'));
+  fs.writeFileSync(path.join(root, 'note.txt'), 'known');
+  const draft = '```moragent-plan\n{"tasks":[{"id":"t1","role":"backend","prompt":"make a file"}]}\n```';
+  try {
+    for (const [provisional, final] of [[draft, 'No changes needed.'], ['Checking first.', draft]]) {
+      let turn = 0;
+      const events = [];
+      setFetch(async () => ({
+        ok: true, status: 200,
+        json: async () => ({ choices: [{ message: ++turn === 1
+          ? { role: 'assistant', content: provisional, tool_calls: [{ id: 'read_1', type: 'function', function: { name: 'read_file', arguments: JSON.stringify({ path: 'note.txt' }) } }] }
+          : { role: 'assistant', content: final } }] }),
+      }));
+      const result = await openai.run({ root, prompt: 'Inspect note.txt', apiKey: 'test-key', autonomy: 'readonly', onEvent: (event) => events.push(event) });
+      assert.equal(result.ok, true);
+      assert.equal(result.text, final);
+      assert.ok(events.some((event) => event.type === 'text' && event.delta === provisional), 'provisional progress remains visible');
+      assert.equal(events.at(-1).text, final);
+    }
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('OpenAI-compatible malformed tool arguments fail without running the tool', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-bad-tool-'));
+  try {
+    for (const args of ['{bad json', 'null', '[]']) {
+      let requests = 0;
+      setFetch(async () => {
+        requests++;
+        return {
+          ok: true, status: 200,
+          json: async () => ({ choices: [{ message: {
+            role: 'assistant', content: null,
+            tool_calls: [{ id: 'bad_call', type: 'function', function: {
+              name: 'write_file', arguments: args,
+            } }],
+          } }] }),
+        };
+      });
+      const result = await openai.run({ root, prompt: 'Write a file', apiKey: 'test-key' });
+      assert.equal(result.ok, false, args);
+      assert.match(result.error, /JSON inválidos|invalid JSON|no son un objeto|non-object arguments/);
+      assert.equal(requests, 1);
+      assert.deepEqual(fs.readdirSync(root), []);
+    }
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('API worker cannot claim success after an unrecovered file-tool failure', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-failed-file-tool-'));
+  const events = [];
+  let turn = 0;
+  try {
+    setFetch(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: ++turn === 1
+        ? { role: 'assistant', content: null, tool_calls: [{ id: 'write_1', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: '../outside.txt', content: 'wrong' }) } }] }
+        : { role: 'assistant', content: 'Created outside.txt.' } }] }),
+    }));
+    const result = await openai.run({ root, prompt: 'Create outside.txt', apiKey: 'test-key', autonomy: 'auto', onEvent: (event) => events.push(event) });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /file tool|herramienta de archivo/i);
+    assert.equal(events.at(-1).type, 'done');
+    assert.equal(events.at(-1).ok, false);
+    assert.deepEqual(fs.readdirSync(root), []);
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('API worker cannot claim success after a write_file call without content', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-missing-content-'));
+  const file = path.join(root, 'note.txt');
+  fs.writeFileSync(file, 'original');
+  let turn = 0;
+  try {
+    setFetch(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: ++turn === 1
+        ? { role: 'assistant', content: null, tool_calls: [{ id: 'write_1', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'note.txt' }) } }] }
+        : { role: 'assistant', content: 'Updated note.txt.' } }] }),
+    }));
+    const result = await openai.run({ root, prompt: 'Update note.txt', apiKey: 'test-key', autonomy: 'auto' });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /file tool|herramienta de archivo/i);
+    assert.equal(fs.readFileSync(file, 'utf8'), 'original');
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('API worker may recover a failed edit by successfully editing the same path', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-retry-file-tool-'));
+  fs.writeFileSync(path.join(root, 'note.txt'), 'before');
+  let turn = 0;
+  try {
+    setFetch(async () => {
+      turn++;
+      const message = turn === 3
+        ? { role: 'assistant', content: 'Updated note.txt.' }
+        : { role: 'assistant', content: null, tool_calls: [{ id: `edit_${turn}`, type: 'function', function: { name: 'edit_file', arguments: JSON.stringify({ path: 'note.txt', old_string: turn === 1 ? 'missing' : 'before', new_string: 'after' }) } }] };
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message }] }) };
+    });
+    const result = await openai.run({ root, prompt: 'Update note.txt', apiKey: 'test-key', autonomy: 'auto' });
+    assert.equal(result.ok, true);
+    assert.equal(fs.readFileSync(path.join(root, 'note.txt'), 'utf8'), 'after');
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('API worker preserves literal dollar tokens in an edit_file tool call', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-api-literal-edit-'));
+  const file = path.join(root, 'source.txt');
+  fs.writeFileSync(file, 'prefix-before-suffix');
+  let turn = 0;
+  try {
+    setFetch(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: ++turn === 1
+        ? { role: 'assistant', content: null, tool_calls: [{ id: 'edit_1', type: 'function', function: { name: 'edit_file', arguments: JSON.stringify({ path: 'source.txt', old_string: 'before', new_string: '$&' }) } }] }
+        : { role: 'assistant', content: 'Edited source.txt.' } }] }),
+    }));
+    const result = await openai.run({ root, prompt: 'Insert literal $&', apiKey: 'test-key', autonomy: 'auto' });
+    assert.equal(result.ok, true);
+    assert.equal(fs.readFileSync(file, 'utf8'), 'prefix-$&-suffix');
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('credentials: MORAGENT_HOME override, file mode 0600, get, set, remove, list', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-cred-test-'));
@@ -65,6 +408,7 @@ test('credentials: MORAGENT_HOME override, file mode 0600, get, set, remove, lis
 
     // Set second key
     setKey('openai', 'sk-proj-9876543210zyxw');
+    assert.deepEqual(fs.readdirSync(tmpDir), ['credentials.json'], 'atomic saves should leave no temporary key files');
 
     // List keys
     const keys = listKeys();
@@ -101,6 +445,30 @@ test('credentials: MORAGENT_HOME override, file mode 0600, get, set, remove, lis
   }
 });
 
+test('credentials: a damaged file is preserved instead of overwritten by login changes', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-cred-damaged-'));
+  const originalHome = process.env.MORAGENT_HOME;
+  const originalKey = process.env.OPENAI_API_KEY;
+  try {
+    process.env.MORAGENT_HOME = tmpDir;
+    delete process.env.OPENAI_API_KEY;
+    const file = getCredentialsPath();
+    const damaged = '{"openai":"sk-keep-me", invalid';
+    fs.writeFileSync(file, damaged, { mode: 0o600 });
+
+    assert.equal(getKey('openai'), null);
+    assert.throws(() => setKey('openai', 'sk-new'), /existing credentials\.json is unreadable or invalid/);
+    assert.throws(() => setEndpoint('compatible', 'http://127.0.0.1:7777/v1'), /existing credentials\.json is unreadable or invalid/);
+    assert.throws(() => removeKey('openai'), /existing credentials\.json is unreadable or invalid/);
+    assert.equal(fs.readFileSync(file, 'utf8'), damaged);
+    assert.deepEqual(fs.readdirSync(tmpDir), ['credentials.json']);
+  } finally {
+    if (originalHome === undefined) delete process.env.MORAGENT_HOME; else process.env.MORAGENT_HOME = originalHome;
+    if (originalKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalKey;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('credentials: maskKey formatting', () => {
   assert.equal(maskKey(''), '');
   assert.equal(maskKey('sk-1234567890abcd'), 'sk-…abcd');
@@ -120,6 +488,7 @@ test('tools: path confinement rejects .. and external symlinks', () => {
     const inside = assertPathInside(root, 'subdir/file.txt');
     const realRoot = fs.realpathSync(root);
     assert.ok(inside.startsWith(realRoot));
+    assert.equal(assertPathInside(root, '..cache/file.txt'), path.join(realRoot, '..cache', 'file.txt'));
 
     // Traversal with .. rejected
     assert.throws(() => {
@@ -149,6 +518,194 @@ test('tools: path confinement rejects .. and external symlinks', () => {
   }
 });
 
+test('tools: write_file cannot follow a dangling symlink outside the project', { skip: process.platform === 'win32' }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-link-root-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-link-outside-'));
+  const destination = path.join(outside, 'new.txt');
+  try {
+    fs.symlinkSync(destination, path.join(root, 'link.txt'));
+    const result = await executeTool('write_file', { path: 'link.txt', content: 'escape' }, { root });
+    assert.equal(result.ok, false);
+    assert.equal(fs.existsSync(destination), false);
+    fs.symlinkSync(path.join(outside, 'new-dir'), path.join(root, 'link-dir'));
+    const nested = await executeTool('write_file', { path: 'link-dir/nested.txt', content: 'escape' }, { root });
+    assert.equal(nested.ok, false);
+    assert.equal(fs.existsSync(path.join(outside, 'new-dir')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('tools: list_dir does not follow symlinks for external file metadata', { skip: process.platform === 'win32' }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-list-root-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-list-outside-'));
+  try {
+    fs.writeFileSync(path.join(root, 'ordinary.txt'), 'ok');
+    fs.writeFileSync(path.join(outside, 'secret.txt'), 'x'.repeat(12345));
+    fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'external.txt'));
+    fs.symlinkSync(path.join(root, 'ordinary.txt'), path.join(root, 'internal.txt'));
+
+    const result = await executeTool('list_dir', { path: '.' }, { root, autonomy: 'readonly' });
+    assert.equal(result.ok, true);
+    assert.match(result.output, /\[FILE\] ordinary\.txt \(2 B\)/);
+    assert.match(result.output, /\[LINK\] external\.txt(?:\n|$)/);
+    assert.match(result.output, /\[LINK\] internal\.txt(?:\n|$)/);
+    assert.doesNotMatch(result.output, /12345 B|secret\.txt/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('tools: read_file streams selected lines from oversized files while edit_file rejects them', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-large-file-'));
+  try {
+    const file = path.join(root, 'large.txt');
+    fs.writeFileSync(file, 'first\n');
+    fs.truncateSync(file, 32 * 1024 * 1024);
+    const before = fs.statSync(file).size;
+    const descriptor = fs.openSync(file, 'r+');
+    try {
+      const tail = Buffer.from('\nlast\n');
+      fs.writeSync(descriptor, tail, 0, tail.length, before - tail.length);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+
+    const read = await executeTool('read_file', { path: 'large.txt', offset: 1, limit: 1 }, { root, autonomy: 'readonly' });
+    assert.equal(read.ok, true);
+    assert.equal(read.output, 'first');
+    let yielded = false;
+    const tick = setTimeout(() => { yielded = true; }, 0);
+    const tail = await executeTool('read_file', { path: 'large.txt', offset: 3, limit: 1 }, { root, autonomy: 'readonly' });
+    clearTimeout(tick);
+    assert.equal(tail.ok, true);
+    assert.equal(tail.output, 'last');
+    assert.equal(yielded, true, 'large offset scan must yield to the terminal event loop');
+    const edit = await executeTool('edit_file', { path: 'large.txt', old_string: 'first', new_string: 'changed' }, { root });
+    assert.equal(edit.ok, false);
+    assert.match(edit.output, /too large|demasiado grande/i);
+    assert.equal(fs.statSync(file).size, before);
+    const check = fs.openSync(file, 'r');
+    try {
+      const first = Buffer.alloc(6);
+      fs.readSync(check, first, 0, first.length, 0);
+      assert.equal(first.toString('utf8'), 'first\n');
+    } finally {
+      fs.closeSync(check);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tools: read_file preserves UTF-8 across stream chunks, truncates output, and cancels a long scan', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-stream-read-'));
+  try {
+    fs.writeFileSync(path.join(root, 'boundary.txt'), `${'a'.repeat(65534)}\néx\n`);
+    const selected = await executeTool('read_file', { path: 'boundary.txt', offset: 2, limit: 1 }, { root });
+    assert.equal(selected.ok, true);
+    assert.equal(selected.output, 'éx');
+    const full = await executeTool('read_file', { path: 'boundary.txt' }, { root });
+    assert.equal(full.ok, true);
+    assert.ok(Buffer.byteLength(full.output, 'utf8') <= MAX_OUTPUT_BYTES);
+    assert.match(full.output, /output truncated to 20 KB/);
+
+    const large = path.join(root, 'large.txt');
+    fs.writeFileSync(large, 'first\n');
+    fs.truncateSync(large, 64 * 1024 * 1024);
+    const controller = new AbortController();
+    const pending = executeTool('read_file', { path: 'large.txt', offset: 3, limit: 1 }, { root, signal: controller.signal });
+    setTimeout(() => controller.abort(), 1);
+    const cancelled = await pending;
+    assert.equal(cancelled.ok, false);
+    assert.match(cancelled.output, /cancelada|cancelled/i);
+    // A destroyed FileHandle stream must not emit a late uncaught abort error.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tools: incomplete or malformed file arguments never overwrite existing content', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-tools-arguments-'));
+  const file = path.join(root, 'existing.txt');
+  try {
+    fs.writeFileSync(file, 'keep this text');
+    for (const args of [{ path: 'existing.txt' }, { path: 'existing.txt', content: { text: 'replacement' } }]) {
+      const result = await executeTool('write_file', args, { root });
+      assert.equal(result.ok, false);
+      assert.equal(fs.readFileSync(file, 'utf8'), 'keep this text');
+    }
+    for (const args of [
+      { path: 'existing.txt', old_string: 'keep this text' },
+      { path: 'existing.txt', old_string: '', new_string: 'replacement' },
+      { path: 'existing.txt', old_string: 'keep this text', new_string: { text: 'replacement' } },
+    ]) {
+      const result = await executeTool('edit_file', args, { root });
+      assert.equal(result.ok, false);
+      assert.equal(fs.readFileSync(file, 'utf8'), 'keep this text');
+    }
+    assert.equal((await executeTool('write_file', { path: 'empty.txt', content: '' }, { root })).ok, true);
+    assert.equal(fs.readFileSync(path.join(root, 'empty.txt'), 'utf8'), '');
+    assert.equal((await executeTool('edit_file', { path: 'existing.txt', old_string: 'keep this text', new_string: '' }, { root })).ok, true);
+    assert.equal(fs.readFileSync(file, 'utf8'), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('write_file can construct exact LF bytes from lines without escape ambiguity', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-lines-write-'));
+  try {
+    const result = await executeTool('write_file', { path: 'exact.txt', lines: ['LIVE-ENGINE-OK'], final_newline: true }, { root });
+    assert.equal(result.ok, true);
+    assert.equal(fs.readFileSync(path.join(root, 'exact.txt'), 'utf8'), 'LIVE-ENGINE-OK\n');
+    const noFinal = await executeTool('write_file', { path: 'plain.txt', lines: ['first', 'second'], final_newline: false }, { root });
+    assert.equal(noFinal.ok, true);
+    assert.equal(fs.readFileSync(path.join(root, 'plain.txt'), 'utf8'), 'first\nsecond');
+    for (const args of [
+      { path: 'exact.txt', lines: ['wrong'] },
+      { path: 'exact.txt', lines: ['wrong\nline'], final_newline: true },
+      { path: 'exact.txt', lines: ['wrong'], final_newline: 'true' },
+      { path: 'exact.txt', content: 'wrong', lines: ['wrong'], final_newline: true },
+    ]) {
+      assert.equal((await executeTool('write_file', args, { root })).ok, false);
+      assert.equal(fs.readFileSync(path.join(root, 'exact.txt'), 'utf8'), 'LIVE-ENGINE-OK\n');
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('API file tools reject a sibling task path without blocking the assigned path', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-task-scope-'));
+  try {
+    const options = { root, protectedOtherPaths: ['ui.txt'] };
+    const denied = await executeTool('write_file', { path: './ui.txt', content: 'UI' }, options);
+    assert.equal(denied.ok, false);
+    assert.equal(denied.code, 'TASK_SCOPE');
+    assert.equal(fs.existsSync(path.join(root, 'ui.txt')), false);
+    const allowed = await executeTool('write_file', { path: 'api.txt', content: 'API' }, options);
+    assert.equal(allowed.ok, true);
+    assert.equal(fs.readFileSync(path.join(root, 'api.txt'), 'utf8'), 'API');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('tools: edit_file inserts replacement text literally, including dollar tokens', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-edit-literal-'));
+  const file = path.join(root, 'code.txt');
+  try {
+    for (const replacement of ['$&', '$$', '$`', "$'", 'const value = "$&";']) {
+      fs.writeFileSync(file, 'prefix-before-suffix');
+      const result = await executeTool('edit_file', { path: 'code.txt', old_string: 'before', new_string: replacement }, { root });
+      assert.equal(result.ok, true, replacement);
+      assert.equal(fs.readFileSync(file, 'utf8'), `prefix-${replacement}-suffix`, replacement);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('tools: write_file, read_file, edit_file, list_dir, grep', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-tools-crud-'));
 
@@ -160,6 +717,13 @@ test('tools: write_file, read_file, edit_file, list_dir, grep', async () => {
     }, { root });
     assert.equal(writeRes.ok, true);
     assert.ok(fs.existsSync(path.join(root, 'docs/hello.txt')));
+    assert.match(writeRes.output, /Final LF newline: no/);
+    const newlineRes = await executeTool('write_file', { path: 'newline.txt', content: 'line\n' }, { root });
+    assert.match(newlineRes.output, /Final LF newline: yes/);
+    const escapedRes = await executeTool('write_file', { path: 'escaped.txt', content: 'line\\n' }, { root });
+    assert.match(escapedRes.output, /literal characters, not a newline/);
+    const escapedRead = await executeTool('read_file', { path: 'escaped.txt' }, { root });
+    assert.match(escapedRead.output, /literal backslash \+ n characters, not a final LF newline/);
 
     // 2. read_file full
     const readRes = await executeTool('read_file', { path: 'docs/hello.txt' }, { root });
@@ -210,12 +774,149 @@ test('tools: write_file, read_file, edit_file, list_dir, grep', async () => {
     const truncated = truncateOutput(huge);
     assert.ok(Buffer.byteLength(truncated, 'utf8') <= MAX_OUTPUT_BYTES);
     assert.ok(truncated.includes('output truncated to 20 KB'));
+    for (const character of ['😀', '漢']) {
+      const unicode = truncateOutput(character.repeat(20000));
+      assert.ok(Buffer.byteLength(unicode, 'utf8') <= MAX_OUTPUT_BYTES);
+      assert.doesNotMatch(unicode, /�/, 'truncation must not split a UTF-8 character');
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('tools: bash autonomy "ask" refuses, "auto" executes', async () => {
+test('file API tools refuse a named pipe instead of blocking the terminal', { skip: process.platform === 'win32' }, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-pipe-tools-'));
+  try {
+    const pipe = path.join(root, 'pipe');
+    const created = spawnSync('mkfifo', [pipe]);
+    if (created.error || created.status !== 0) return t.skip('mkfifo is unavailable');
+    const moduleUrl = new URL('../src/providers/api/tools.js', import.meta.url).href;
+    const script = `const { executeTool } = await import(process.argv[1]);
+      const result = await executeTool(process.argv[2], { path: 'pipe', pattern: 'x', old_string: 'x', new_string: 'y', content: 'x' }, { root: process.argv[3] });
+      process.stdout.write(JSON.stringify(result));`;
+    for (const name of ['read_file', 'write_file', 'edit_file', 'grep']) {
+      const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, moduleUrl, name, root], { timeout: 700, encoding: 'utf8' });
+      assert.equal(child.status, 0, `${name} hung or crashed: ${child.error?.message || child.stderr}`);
+      const result = JSON.parse(child.stdout);
+      assert.equal(result.ok, false, name);
+      assert.match(result.output, /regular file/i, name);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('grep stops at a global match limit and reports that its result is partial', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-grep-limit-'));
+  try {
+    fs.writeFileSync(path.join(root, 'a.txt'), 'match\n'.repeat(1000));
+    fs.writeFileSync(path.join(root, 'b.txt'), 'match-after-limit\n');
+    const result = await executeTool('grep', { pattern: 'match', path: '.' }, { root });
+    assert.equal(result.ok, true);
+    assert.match(result.summary, /1000 matches/);
+    assert.match(result.output, /search stopped after 1000 matches/);
+    assert.doesNotMatch(result.output, /b\.txt/);
+    const direct = await executeTool('grep', { pattern: 'match', path: 'a.txt' }, { root });
+    assert.match(direct.summary, /1000 matches/);
+    assert.match(direct.output, /search stopped after 1000 matches/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('grep yields to cancellation during a project search', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-grep-cancel-'));
+  const controller = new AbortController();
+  try {
+    const nested = path.join(root, 'nested');
+    fs.mkdirSync(nested);
+    for (let i = 0; i < 200; i++) fs.writeFileSync(path.join(nested, `${String(i).padStart(3, '0')}.txt`), `line ${i}\n`);
+    const pending = executeTool('grep', { pattern: 'never-present', path: '.' }, { root, signal: controller.signal });
+    setTimeout(() => controller.abort(), 0);
+    const result = await pending;
+    assert.equal(result.ok, false);
+    assert.match(result.output, /cancel|abort/i);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('pathological grep regex cannot freeze cancellation or the search deadline', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-grep-regex-'));
+  try {
+    fs.writeFileSync(path.join(root, 'bad.txt'), `${'a'.repeat(30)}!\n`);
+    const moduleUrl = new URL('../src/providers/api/tools.js', import.meta.url).href;
+    const script = `const { executeTool } = await import(process.argv[1]);
+      const controller = new AbortController();
+      if (process.argv[3] === 'cancel') setTimeout(() => controller.abort(), 100);
+      const result = await executeTool('grep', { pattern: '^(a+)+$', path: 'bad.txt' },
+        { root: process.argv[2], signal: controller.signal });
+      process.stdout.write(JSON.stringify(result));`;
+    for (const mode of ['cancel', 'deadline']) {
+      const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, moduleUrl, root, mode], {
+        timeout: 2000, encoding: 'utf8', env: { ...process.env, MORAGENT_GREP_TIMEOUT_MS: '150' },
+      });
+      assert.equal(child.status, 0, `${mode} hung: ${child.error?.message || child.stderr}`);
+      const result = JSON.parse(child.stdout);
+      assert.equal(result.ok, false, mode);
+      assert.match(result.output, mode === 'cancel' ? /cancel|abort/i : /time|límite/i);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('grep worker uses the session language instead of the process locale', async () => {
+  const previous = { selected: getLang(), environment: process.env.MORAGENT_LANG };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-grep-lang-'));
+  try {
+    process.env.MORAGENT_LANG = 'es';
+    setLang('en');
+    const english = await executeTool('grep', { pattern: 'x', path: '../outside' }, { root });
+    assert.equal(english.ok, false);
+    assert.match(english.output, /escapes the project root/);
+    process.env.MORAGENT_LANG = 'en';
+    setLang('es');
+    const spanish = await executeTool('grep', { pattern: 'x', path: '../outside' }, { root });
+    assert.equal(spanish.ok, false);
+    assert.match(spanish.output, /escapa de la raíz del proyecto/);
+  } finally {
+    setLang(previous.selected);
+    if (previous.environment === undefined) delete process.env.MORAGENT_LANG;
+    else process.env.MORAGENT_LANG = previous.environment;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('OpenAI-compatible tool loop receives grep results from its worker', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-grep-loop-'));
+  let requests = 0;
+  try {
+    fs.writeFileSync(path.join(root, 'notes.txt'), 'alpha\nneedle here\nomega\n');
+    setFetch(async (_url, options) => {
+      requests++;
+      if (requests === 1) return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'tool_calls', message: {
+        role: 'assistant', content: null,
+        tool_calls: [{ id: 'grep-call', type: 'function', function: { name: 'grep', arguments: JSON.stringify({ pattern: 'needle', path: '.' }) } }],
+      } }] }) };
+      const messages = JSON.parse(options.body).messages;
+      const toolResult = messages.at(-1);
+      assert.equal(toolResult.role, 'tool');
+      assert.equal(toolResult.tool_call_id, 'grep-call');
+      assert.match(toolResult.content, /notes\.txt:2: needle here/);
+      return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'Found the note.' } }] }) };
+    });
+    const result = await openai.run({ root, prompt: 'Find the needle', apiKey: 'test-key', autonomy: 'readonly' });
+    assert.equal(result.ok, true);
+    assert.equal(result.text, 'Found the note.');
+    assert.equal(requests, 2);
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tools: unsandboxed bash requires explicit full autonomy', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-bash-test-'));
 
   try {
@@ -224,27 +925,105 @@ test('tools: bash autonomy "ask" refuses, "auto" executes', async () => {
     assert.equal(askRes.ok, false);
     assert.ok(askRes.summary.includes('Refused'));
 
-    // autonomy 'auto' -> runs
+    // autonomy 'auto' also refuses unsandboxed shell execution
     const autoRes = await executeTool('bash', { command: 'echo hello from bash' }, { root, autonomy: 'auto' });
-    assert.equal(autoRes.ok, true);
-    assert.equal(autoRes.output.trim(), 'hello from bash');
+    assert.equal(autoRes.ok, false);
+    assert.match(autoRes.output, /full/);
+
+    const fullRes = await executeTool('bash', { command: 'echo hello from bash' }, { root, autonomy: 'full' });
+    assert.equal(fullRes.ok, true);
+    assert.equal(fullRes.output.trim(), 'hello from bash');
+
+    const askWrite = await executeTool('write_file', { path: 'blocked.txt', content: 'x' }, { root, autonomy: 'ask' });
+    assert.equal(askWrite.ok, false);
+    assert.equal(fs.existsSync(path.join(root, 'blocked.txt')), false);
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tools: bash decodes UTF-8 split across stdout and stderr chunks', { skip: process.platform === 'win32' }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-bash-utf8-'));
+  try {
+    const command = String.raw`printf '\303'; sleep 0.05; printf '\261'; printf '\342' >&2; sleep 0.05; printf '\202\254' >&2`;
+    const result = await executeTool('bash', { command }, { root, autonomy: 'full' });
+    assert.equal(result.ok, true);
+    assert.equal(result.output, 'ñ\n€');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tools: cancelling bash is responsive and stops child processes', { skip: process.platform === 'win32' }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-bash-cancel-'));
+  const controller = new AbortController();
+  try {
+    const started = Date.now();
+    const pending = executeTool('bash', {
+      command: 'sleep 1 && printf orphan > marker.txt & wait',
+    }, { root, autonomy: 'full', signal: controller.signal });
+    setTimeout(() => controller.abort(), 50);
+    const result = await pending;
+    assert.equal(result.ok, false);
+    assert.match(result.output, /cancel/i);
+    assert.ok(Date.now() - started < 900, 'abort should not wait for the shell command');
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    assert.equal(fs.existsSync(path.join(root, 'marker.txt')), false, 'child process should be terminated too');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('loop: abort during bash ends the turn without another provider request', { skip: process.platform === 'win32' }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-loop-cancel-'));
+  const controller = new AbortController();
+  const events = [];
+  let requests = 0;
+  try {
+    setFetch(async () => {
+      requests++;
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: {
+            role: 'assistant', content: null,
+            tool_calls: [{ id: 'call_slow', type: 'function', function: {
+              name: 'bash', arguments: JSON.stringify({ command: 'sleep 3' }),
+            } }],
+          } }],
+        }),
+      };
+    });
+    const pending = openai.run({ root, prompt: 'Run a slow command', apiKey: 'fake', autonomy: 'full',
+      signal: controller.signal, onEvent: (event) => events.push(event) });
+    setTimeout(() => controller.abort(), 50);
+    const result = await pending;
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'Aborted');
+    assert.equal(requests, 1);
+    assert.equal(events.filter((event) => event.type === 'done').length, 1);
+  } finally {
+    resetFetch();
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
 test('tools: schema generators for Anthropic, OpenAI, and Gemini', () => {
   const ant = getAnthropicTools();
-  assert.ok(Array.isArray(ant) && ant.length >= 6);
+  assert.ok(Array.isArray(ant) && ant.length >= 5);
   assert.ok(ant.find((t) => t.name === 'read_file')?.input_schema);
+  assert.equal(ant.some((t) => t.name === 'bash'), false);
 
   const oai = getOpenAITools();
-  assert.ok(Array.isArray(oai) && oai.length >= 6);
+  assert.ok(Array.isArray(oai) && oai.length >= 5);
   assert.equal(oai[0].type, 'function');
 
   const gem = getGeminiTools();
   assert.ok(Array.isArray(gem) && gem.length === 1);
-  assert.ok(Array.isArray(gem[0].functionDeclarations) && gem[0].functionDeclarations.length >= 6);
+  assert.ok(Array.isArray(gem[0].functionDeclarations) && gem[0].functionDeclarations.length >= 5);
+  const gemWrite = gem[0].functionDeclarations.find((tool) => tool.name === 'write_file');
+  assert.equal(gemWrite.parameters.properties.lines.type, 'ARRAY');
+  assert.equal(gemWrite.parameters.properties.lines.items.type, 'STRING');
 });
 
 test('status: reports ready based on keys and ollama ping', async () => {
@@ -332,6 +1111,7 @@ test('loop: Anthropic conversation with 2 tool calls (write_file + read_file) en
             id: 'msg_1',
             type: 'message',
             role: 'assistant',
+            stop_reason: 'tool_use',
             content: [
               { type: 'text', text: 'Creating greeting file...' },
               {
@@ -361,6 +1141,7 @@ test('loop: Anthropic conversation with 2 tool calls (write_file + read_file) en
             id: 'msg_2',
             type: 'message',
             role: 'assistant',
+            stop_reason: 'tool_use',
             content: [
               {
                 type: 'tool_use',
@@ -383,6 +1164,7 @@ test('loop: Anthropic conversation with 2 tool calls (write_file + read_file) en
             id: 'msg_3',
             type: 'message',
             role: 'assistant',
+            stop_reason: 'end_turn',
             content: [
               { type: 'text', text: 'El archivo greet.txt contiene: ¡Hola desde Anthropic!' },
             ],
@@ -459,6 +1241,7 @@ test('loop: OpenAI conversation with 2 tool calls (write_file + read_file) endin
             id: 'chatcmpl_1',
             choices: [
               {
+                finish_reason: 'tool_calls',
                 message: {
                   role: 'assistant',
                   content: 'Writing file...',
@@ -493,6 +1276,7 @@ test('loop: OpenAI conversation with 2 tool calls (write_file + read_file) endin
             id: 'chatcmpl_2',
             choices: [
               {
+                finish_reason: 'tool_calls',
                 message: {
                   role: 'assistant',
                   tool_calls: [
@@ -521,6 +1305,7 @@ test('loop: OpenAI conversation with 2 tool calls (write_file + read_file) endin
             id: 'chatcmpl_3',
             choices: [
               {
+                finish_reason: 'stop',
                 message: {
                   role: 'assistant',
                   content: 'The file oai.txt contains "hello from OpenAI".',
@@ -579,6 +1364,7 @@ test('loop: Gemini (Google) conversation with 2 tool calls (write_file + read_fi
                     { text: 'Creating gemini.txt' },
                     {
                       functionCall: {
+                        id: 'gemini-write-1',
                         name: 'write_file',
                         args: { path: 'gemini.txt', content: 'Gemini created this' },
                       },
@@ -598,6 +1384,7 @@ test('loop: Gemini (Google) conversation with 2 tool calls (write_file + read_fi
         const lastContent = body.contents[body.contents.length - 1];
         assert.equal(lastContent.role, 'user');
         assert.ok(lastContent.parts[0].functionResponse);
+        assert.equal(lastContent.parts[0].functionResponse.id, 'gemini-write-1');
 
         return {
           ok: true,
@@ -610,6 +1397,7 @@ test('loop: Gemini (Google) conversation with 2 tool calls (write_file + read_fi
                   parts: [
                     {
                       functionCall: {
+                        id: 'gemini-read-2',
                         name: 'read_file',
                         args: { path: 'gemini.txt' },
                       },
@@ -625,6 +1413,8 @@ test('loop: Gemini (Google) conversation with 2 tool calls (write_file + read_fi
       }
 
       if (callCount === 3) {
+        const lastContent = body.contents[body.contents.length - 1];
+        assert.equal(lastContent.parts[0].functionResponse.id, 'gemini-read-2');
         return {
           ok: true,
           status: 200,
@@ -712,8 +1502,45 @@ test('loop: abort and HTTP error handling', async () => {
   }
 });
 
+test('loop: stalled HTTP requests time out and honour cancellation', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-http-timeout-'));
+  const events = [];
+  let requestSignal;
+  try {
+    setFetch((_url, options) => {
+      requestSignal = options.signal;
+      return new Promise(() => {}); // an endpoint that never sends response headers
+    });
+    const timedOut = await openai.run({ root, prompt: 'hello', apiKey: 'fake',
+      requestTimeoutMs: 30, onEvent: (event) => events.push(event) });
+    assert.equal(timedOut.ok, false);
+    assert.match(timedOut.error, /timed out|excedió/i);
+    assert.equal(requestSignal.aborted, true);
+    assert.equal(events.filter((event) => event.type === 'done').length, 1);
+
+    const controller = new AbortController();
+    const pending = openai.run({ root, prompt: 'hello', apiKey: 'fake',
+      requestTimeoutMs: 5000, signal: controller.signal });
+    setTimeout(() => controller.abort(), 30);
+    const cancelled = await pending;
+    assert.equal(cancelled.ok, false);
+    assert.equal(cancelled.error, 'Aborted');
+    assert.equal(requestSignal.aborted, true);
+
+    setFetch(() => ({ ok: true, json: () => new Promise(() => {}) }));
+    const bodyTimedOut = await openai.run({ root, prompt: 'hello', apiKey: 'fake', requestTimeoutMs: 30 });
+    assert.equal(bodyTimedOut.ok, false);
+    assert.match(bodyTimedOut.error, /timed out|excedió/i);
+  } finally {
+    resetFetch();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('loop: openrouter and ollama runs execute with appropriate headers and defaults', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-or-ollama-test-'));
+  const priorOllamaModel = process.env.MORAGENT_OLLAMA_MODEL;
+  delete process.env.MORAGENT_OLLAMA_MODEL;
 
   try {
     let capturedHeaders = null;
@@ -744,9 +1571,25 @@ test('loop: openrouter and ollama runs execute with appropriate headers and defa
     assert.equal(capturedHeaders['X-Title'], 'MORAGENT');
     assert.ok(capturedUrl.includes('openrouter.ai'));
 
-    // Ollama run (no key required)
-    setFetch(async (url) => {
+    // Ollama run (no key required) selects an installed chat model, not a
+    // hard-coded default that may not exist on this local server.
+    resetApiModelCache();
+    let capturedModel = null;
+    let catalogUrl = null;
+    setFetch(async (url, opts) => {
       capturedUrl = url;
+      if (String(url).endsWith('/api/tags')) {
+        catalogUrl = String(url);
+        return {
+          ok: true,
+          json: async () => ({ models: [
+            { name: 'vector-model', capabilities: ['embedding'] },
+            { name: 'text-only-model', capabilities: ['completion'] },
+            { name: 'qwen-local:latest', capabilities: ['completion', 'tools'] },
+          ] }),
+        };
+      }
+      capturedModel = JSON.parse(opts.body).model;
       return {
         ok: true,
         status: 200,
@@ -760,14 +1603,64 @@ test('loop: openrouter and ollama runs execute with appropriate headers and defa
     const ollamaRes = await ollama.run({
       root,
       prompt: 'test ollama',
-      baseUrl: 'http://localhost:11434',
+      baseUrl: 'http://127.0.0.1:44999',
     });
     assert.equal(ollamaRes.ok, true);
     assert.equal(ollamaRes.text, 'hello from ollama');
-    assert.ok(capturedUrl.includes('localhost:11434/v1/chat/completions'));
+    assert.equal(catalogUrl, 'http://127.0.0.1:44999/api/tags');
+    assert.ok(capturedUrl.includes('127.0.0.1:44999/v1/chat/completions'));
+    assert.equal(capturedModel, 'qwen-local:latest');
   } finally {
+    if (priorOllamaModel === undefined) delete process.env.MORAGENT_OLLAMA_MODEL;
+    else process.env.MORAGENT_OLLAMA_MODEL = priorOllamaModel;
+    resetApiModelCache();
     resetFetch();
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Ollama reports missing installed tool-capable models instead of sending a phantom default', async () => {
+  const priorOllamaModel = process.env.MORAGENT_OLLAMA_MODEL;
+  delete process.env.MORAGENT_OLLAMA_MODEL;
+  resetApiModelCache();
+  const urls = [];
+  try {
+    setFetch(async (url) => {
+      urls.push(String(url));
+      return { ok: true, json: async () => ({ models: [
+        { name: 'vectors', capabilities: ['embedding'] },
+        { name: 'text-only', capabilities: ['completion'] },
+      ] }) };
+    });
+    const result = await ollama.run({ root: os.tmpdir(), prompt: 'hello', baseUrl: 'http://localhost:11434' });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /no installed tool-capable models|no informó modelos instalados capaces de usar herramientas/);
+    assert.deepEqual(urls, ['http://localhost:11434/api/tags']);
+  } finally {
+    if (priorOllamaModel === undefined) delete process.env.MORAGENT_OLLAMA_MODEL;
+    else process.env.MORAGENT_OLLAMA_MODEL = priorOllamaModel;
+    resetApiModelCache();
+    resetFetch();
+  }
+});
+
+test('Ollama honors an explicit model and environment override without catalog discovery', async () => {
+  const priorOllamaModel = process.env.MORAGENT_OLLAMA_MODEL;
+  process.env.MORAGENT_OLLAMA_MODEL = 'from-environment';
+  const models = [];
+  try {
+    setFetch(async (url, options) => {
+      assert.match(String(url), /\/v1\/chat\/completions$/);
+      models.push(JSON.parse(options.body).model);
+      return { ok: true, json: async () => ({ choices: [{ message: { role: 'assistant', content: 'OK' } }] }) };
+    });
+    assert.equal((await ollama.run({ root: os.tmpdir(), prompt: 'test', model: 'explicit-model' })).ok, true);
+    assert.equal((await ollama.run({ root: os.tmpdir(), prompt: 'test' })).ok, true);
+    assert.deepEqual(models, ['explicit-model', 'from-environment']);
+  } finally {
+    if (priorOllamaModel === undefined) delete process.env.MORAGENT_OLLAMA_MODEL;
+    else process.env.MORAGENT_OLLAMA_MODEL = priorOllamaModel;
+    resetFetch();
   }
 });
 
@@ -901,5 +1794,3 @@ test('tools & loop: autonomy "readonly" permits read-only tools and refuses writ
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
-
-

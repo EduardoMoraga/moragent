@@ -1,17 +1,18 @@
 import { tr } from '../core/i18n.js';
 
 const roleLine = (role, m, providers) => {
-  const p = providers.find((x) => x.id === m.cli);
+  const selected = m.provider || m.cli;
+  const p = providers.find((x) => x.id === selected);
   const mission = typeof m.mission === 'object' ? tr(m.mission) : m.mission;
-  return `- ${role} → ${m.cli}${p && !p.ready ? ' (no disponible)' : ''}: ${mission || ''}`;
+  return `- ${role} → ${selected}${p && !p.ready ? ` (${tr({ es: 'no disponible', en: 'unavailable' })})` : ''}: ${mission || ''}`;
 };
 
 // System prompt for the executive orchestrator. It plans and reviews; subagents implement.
 export function orchestratorSystem({ config, providers }) {
   const es = config.lang !== 'en';
   const roles = Object.entries(config.crew || {}).filter(([r]) => r !== 'lead')
-    .map(([r, m]) => roleLine(r, m, providers)).join('\n') || '- backend → (cualquier proveedor listo)';
-  const ready = providers.filter((p) => p.ready).map((p) => p.id).join(', ') || 'ninguno';
+    .map(([r, m]) => roleLine(r, m, providers)).join('\n') || tr({ es: '- backend → (cualquier proveedor listo)', en: '- backend → (any ready provider)' });
+  const ready = providers.filter((p) => p.ready).map((p) => p.id).join(', ') || tr({ es: 'ninguno', en: 'none' });
   if (!es) return systemEn({ config, roles, ready });
   return `Eres MORAGENT, el orquestador ejecutivo del proyecto "${config.project}".
 Objetivo del proyecto: ${config.goal || '(sin definir: pregúntalo si hace falta)'}
@@ -33,9 +34,34 @@ Reglas:
 {"size":"M","summary":"una línea","tasks":[{"id":"t1","role":"backend","title":"…","prompt":"instrucciones completas","doneWhen":"criterio verificable","dependsOn":[]}]}
 \`\`\`
    Antes del bloque, explica el plan en 2-4 líneas para la persona.
+   Si se exige el contenido exacto de un archivo de texto, añade a esa tarea "checks":[{"type":"file_text","path":"ruta.txt","lines":["una línea"],"finalNewline":true}]. Cada elemento de "lines" es una línea real sin los caracteres literales \\n; "finalNewline" indica un byte LF al final. MORAGENT comparará los bytes antes de publicar. Omite "checks" si el contenido exacto no está definido.
+   Si el pedido trae un bloque moragent-checks, copia TODOS sus archivos a checks de las tareas correspondientes con type "file_text", sin cambiar lines ni finalNewline. MORAGENT cotejará cada uno con el bloque original antes de desplegar workers.
 5. Cuando recibas los resultados de los subagentes, revísalos (puedes leer los archivos), di con claridad qué quedó hecho, qué falta y cómo probarlo. Si algo quedó mal, puedes emitir UN plan de corrección.
 6. Si faltan detalles no críticos, asume lo razonable, dilo en una línea y despacha igual. Pregunta sólo cuando la respuesta cambie el trabajo; en ese caso NO incluyas plan.
 7. Registro sobrio, sin adornos ni marketing. Español neutro (sin voseo). No inventes resultados: si no lo verificaste, dilo.`;
+}
+
+// Repair turns need the plan contract, not the full product tour or file-tool schemas.
+// The original request is supplied in the API transcript by orchestratorTurn.
+export function orchestratorRepairSystem({ config, providers }) {
+  const roles = Object.keys(config.crew || {}).filter((role) => role !== 'lead');
+  const ready = providers.filter((provider) => provider.ready).map((provider) => provider.id);
+  const exampleRole = roles[0] || 'backend';
+  if (config.lang === 'en') return `You are MORAGENT repairing an orchestration plan. Use the original user request in the conversation. You have no repository tools in this repair; do not claim to have inspected files. Delegate needed inspection to a worker.
+Valid roles: ${roles.join(', ') || 'none'}. Ready provider IDs: ${ready.join(', ') || 'none'}. Use only valid roles and providers; omit provider to let MORAGENT assign one.
+Return either BLOCKED: with a reason, or one complete valid JSON block with 1-8 tasks and no tool-call markup:
+\`\`\`moragent-plan
+{"size":"S","summary":"one line","tasks":[{"id":"t1","role":"${exampleRole}","title":"task","prompt":"complete worker instructions","doneWhen":"verifiable result","dependsOn":[]}]}
+\`\`\`
+For an exact text-file request, the relevant task must include "checks":[{"type":"file_text","path":"file.txt","lines":["exact line"],"finalNewline":true}]. Copy the requested lines and newline requirement; never invent exact content. If the request contains a moragent-checks block, include ALL its files as file_text checks in the appropriate tasks, preserving lines and finalNewline exactly. MORAGENT independently compares them with the user block before dispatch. Close every bracket, brace and fence. Do not announce a future plan.`;
+
+  return `Eres MORAGENT y corriges un plan de orquestación. Usa el pedido original de la conversación. En esta corrección no tienes herramientas para leer el repositorio; no afirmes haber inspeccionado archivos. Delega la inspección necesaria a un worker.
+Roles válidos: ${roles.join(', ') || 'ninguno'}. Proveedores listos: ${ready.join(', ') || 'ninguno'}. Usa sólo roles y proveedores válidos; omite provider para que MORAGENT lo asigne.
+Devuelve BLOQUEADO: con una razón, o un único bloque JSON válido y completo con 1-8 tareas, sin marcas de llamadas a herramientas:
+\`\`\`moragent-plan
+{"size":"S","summary":"una línea","tasks":[{"id":"t1","role":"${exampleRole}","title":"tarea","prompt":"instrucciones completas para el worker","doneWhen":"resultado verificable","dependsOn":[]}]}
+\`\`\`
+Si se exige contenido exacto de un archivo de texto, la tarea pertinente debe incluir "checks":[{"type":"file_text","path":"archivo.txt","lines":["línea exacta"],"finalNewline":true}]. Copia las líneas y el requisito de LF solicitados; nunca inventes contenido exacto. Si el pedido contiene un bloque moragent-checks, incluye TODOS sus archivos como checks file_text en las tareas correspondientes sin cambiar lines ni finalNewline. MORAGENT los coteja con el bloque original antes de desplegar workers. Cierra todos los corchetes, llaves y el bloque. No anuncies un plan futuro.`;
 }
 
 function systemEn({ config, roles, ready }) {
@@ -59,6 +85,8 @@ Rules:
 {"size":"M","summary":"one line","tasks":[{"id":"t1","role":"backend","title":"…","prompt":"full instructions","doneWhen":"verifiable criterion","dependsOn":[]}]}
 \`\`\`
    Before the block, explain the plan in 2-4 lines.
+   When exact text-file content is required, add "checks":[{"type":"file_text","path":"file.txt","lines":["one line"],"finalNewline":true}] to that task. Each "lines" element is one actual line without literal \\n characters; "finalNewline" means a trailing LF byte. MORAGENT compares the bytes before publication. Omit "checks" when exact content is not specified.
+   If the request contains a moragent-checks block, copy ALL its files into file_text checks on the appropriate tasks, preserving lines and finalNewline exactly. MORAGENT independently compares every one with the original user block before dispatch.
 5. When you receive the subagents' results, review them (you may read files), state clearly what is done, what is missing and how to test it. If something is wrong you may emit ONE corrective plan.
 6. If non-critical details are missing, assume something reasonable, say it in one line and dispatch anyway. Ask only when the answer changes the work; in that case do NOT include a plan.
 7. Plain, sober tone. Never invent results: say so when you did not verify something.`;
@@ -71,8 +99,15 @@ export function turnPrompt({ text, memory, es }) {
 }
 
 export function reviewPrompt({ results, es }) {
-  const lines = results.map((r) => `### ${r.taskId} · ${r.role} (${r.provider}) — ${r.status}\n${r.title}\n\n${r.summary || '(sin resumen)'}`);
+  const lines = results.map((r) => {
+    const paths = Array.isArray(r.files)
+      ? r.files.length ? `${r.files.slice(0, 30).map((file) => JSON.stringify(file)).join(', ')}${r.files.length > 30 ? ` … +${r.files.length - 30}` : ''}` : (es ? '(ninguna)' : '(none)')
+      : (es ? '(no se incorporaron)' : '(none integrated)');
+    const criterion = r.doneWhen ? `\n${es ? 'Criterio de aceptación' : 'Acceptance criterion'}: ${r.doneWhen}` : '';
+    const exact = r.verifiedChecks?.length ? `\n${es ? 'Archivos comprobados byte por byte antes de publicar' : 'Files byte-checked before publication'}: ${r.verifiedChecks.map((file) => JSON.stringify(file)).join(', ')}` : '';
+    return `### ${r.taskId} · ${r.role} (${r.provider}) — ${r.status}\n${r.title}${criterion}\n${es ? 'Rutas integradas' : 'Integrated paths'}: ${paths}${exact}\n\n${es ? 'Informe del agente' : 'Agent report'}:\n${r.summary || (es ? '(sin resumen)' : '(no summary)')}`;
+  });
   return (es
-    ? 'Los subagentes terminaron. Revisa los resultados (puedes leer los archivos) y responde a la persona: qué quedó hecho, qué falta y cómo probarlo.\n\n'
-    : 'The subagents finished. Review the results (you may read the files) and answer: what is done, what is missing and how to test it.\n\n') + lines.join('\n\n');
+    ? 'Los subagentes terminaron. Contrasta sus informes con los criterios y las rutas realmente integradas; una ruta publicada no demuestra que funcione. MORAGENT comprobó byte por byte los archivos indicados como comprobados antes de publicarlos: esa es evidencia independiente del informe del agente, incluso si una lectura textual no muestra el LF final. Los bytes esperados provienen del plan; los pedidos literales inequívocos de una línea y los bloques explícitos moragent-checks se comparan además con el mensaje original de la persona. No atribuyas esa verificación a archivos no listados ni afirmes que todo criterio del usuario quedó comprobado. Puedes leer los archivos. Responde qué quedó hecho, qué falta y cómo probarlo. Si sugieres comandos de verificación, no inventes sus salidas: wc -l cuenta bytes LF y muestra 0 para un archivo sin LF, aunque tenga texto.\n\n'
+    : 'The subagents finished. Compare their reports with the criteria and actually integrated paths; a published path does not prove that it works. MORAGENT byte-checked files explicitly listed as checked before publication: that is independent evidence beyond the agent report, even if a text read does not display the final LF. Expected bytes come from the plan; unambiguous one-line literals and explicit moragent-checks blocks are also compared with the person’s original message. Do not attribute that verification to unlisted files or claim every user criterion was checked. You may read the files. Answer what is done, what is missing and how to test it. If suggesting verification commands, do not invent their output: wc -l counts LF bytes and reports 0 for a file with text but no LF.\n\n') + lines.join('\n\n');
 }

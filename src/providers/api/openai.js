@@ -25,7 +25,7 @@ export function createOpenAIAdapter({
       return { messages, system };
     },
 
-    buildRequest({ state, model, apiKey, baseUrl, autonomy }) {
+    buildRequest({ state, model, apiKey, baseUrl, autonomy, toolsEnabled = true }) {
       const base = baseUrl || defaultBaseUrl;
       const cleanBase = base.replace(/\/+$/, '');
       const url = cleanBase.endsWith('/chat/completions')
@@ -43,7 +43,7 @@ export function createOpenAIAdapter({
       const body = {
         model,
         messages: state.messages,
-        tools: getOpenAITools({ autonomy }),
+        ...(toolsEnabled ? { tools: getOpenAITools({ autonomy }) } : {}),
       };
 
       return {
@@ -54,19 +54,35 @@ export function createOpenAIAdapter({
     },
 
     parseResponse(json) {
-      const choice = json.choices?.[0];
+      const choice = json?.choices?.[0];
       const message = choice?.message || {};
-      const text = message.content || '';
+      const content = message.content;
+      const text = typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content.filter((part) => part?.type === 'text' && typeof part.text === 'string')
+            .map((part) => part.text).join('\n')
+          : '';
 
       const rawCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-      const toolCalls = rawCalls.map((tc) => {
-        let args = {};
+      const finishReason = choice?.finish_reason;
+      const toolCalls = rawCalls.map((tc, index) => {
+        let args;
         try {
           args = typeof tc.function?.arguments === 'string'
             ? JSON.parse(tc.function.arguments)
-            : (tc.function?.arguments || {});
+            : (tc.function?.arguments ?? {});
         } catch {
-          args = {};
+          throw new Error(t(
+            `La herramienta ${index + 1} devolvió argumentos JSON inválidos. No se ejecutó.`,
+            `Tool call ${index + 1} returned invalid JSON arguments. It was not executed.`,
+          ));
+        }
+        if (!args || typeof args !== 'object' || Array.isArray(args)) {
+          throw new Error(t(
+            `La herramienta ${index + 1} devolvió argumentos que no son un objeto. No se ejecutó.`,
+            `Tool call ${index + 1} returned non-object arguments. It was not executed.`,
+          ));
         }
         return {
           id: tc.id,
@@ -86,6 +102,10 @@ export function createOpenAIAdapter({
       return {
         text,
         toolCalls,
+        // OpenAI-compatible servers may omit finish_reason. When they do provide
+        // one, an unknown or inconsistent reason is not proof of completion.
+        stopIssue: finishReason == null || finishReason === 'stop' || (finishReason === 'tool_calls' && rawCalls.length)
+          ? null : String(finishReason),
         usage,
         rawAssistantMessage: message,
       };

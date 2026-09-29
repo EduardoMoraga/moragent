@@ -16,13 +16,13 @@ export const anthropicAdapter = {
     };
   },
 
-  buildRequest({ state, model, system, apiKey, baseUrl, autonomy }) {
+  buildRequest({ state, model, system, apiKey, baseUrl, autonomy, toolsEnabled = true }) {
     const sys = system || state.system;
     const body = {
       model,
       max_tokens: 4096,
       messages: state.messages,
-      tools: getAnthropicTools({ autonomy }),
+      ...(toolsEnabled ? { tools: getAnthropicTools({ autonomy }) } : {}),
     };
     if (sys) {
       body.system = sys;
@@ -60,9 +60,12 @@ export const anthropicAdapter = {
         }
       : null;
 
+    const stopReason = json.stop_reason;
     return {
       text,
       toolCalls,
+      stopIssue: stopReason == null || stopReason === 'end_turn' || stopReason === 'stop_sequence'
+        || (stopReason === 'tool_use' && toolCalls.length) ? null : String(stopReason),
       usage,
       rawAssistantMessage: content,
     };

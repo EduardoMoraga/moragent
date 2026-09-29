@@ -22,7 +22,7 @@ export const googleAdapter = {
     };
   },
 
-  buildRequest({ state, model, system, apiKey, baseUrl, autonomy }) {
+  buildRequest({ state, model, system, apiKey, baseUrl, autonomy, toolsEnabled = true }) {
     const sys = system || state.system;
     const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
     const cleanBase = base.replace(/\/+$/, '');
@@ -30,7 +30,7 @@ export const googleAdapter = {
 
     const body = {
       contents: state.contents,
-      tools: getGeminiTools({ autonomy }),
+      ...(toolsEnabled ? { tools: getGeminiTools({ autonomy }) } : {}),
     };
 
     if (sys) {
@@ -49,19 +49,18 @@ export const googleAdapter = {
   },
 
   parseResponse(json) {
-    const candidate = json.candidates?.[0]?.content;
+    const firstCandidate = json.candidates?.[0];
+    const candidate = firstCandidate?.content;
     const parts = Array.isArray(candidate?.parts) ? candidate.parts : [];
 
     const textParts = parts.filter((p) => p.text).map((p) => p.text);
     const text = textParts.join('\n');
 
-    let seq = 0;
     const toolCalls = parts
       .filter((p) => p.functionCall)
       .map((p) => {
-        seq++;
         return {
-          id: p.functionCall.id || `call_gemini_${Date.now()}_${seq}`,
+          id: typeof p.functionCall.id === 'string' && p.functionCall.id ? p.functionCall.id : undefined,
           name: p.functionCall.name,
           args: p.functionCall.args || {},
         };
@@ -78,6 +77,8 @@ export const googleAdapter = {
     return {
       text,
       toolCalls,
+      stopIssue: firstCandidate?.finishReason && firstCandidate.finishReason !== 'STOP'
+        ? String(firstCandidate.finishReason).slice(0, 80) : null,
       usage,
       rawAssistantMessage: candidate || { role: 'model', parts },
     };
@@ -90,6 +91,7 @@ export const googleAdapter = {
   appendToolResult({ state, callId, toolName, result }) {
     const responsePart = {
       functionResponse: {
+        ...(callId ? { id: callId } : {}),
         name: toolName,
         response: {
           name: toolName,

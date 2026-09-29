@@ -4,6 +4,7 @@ import { resultOk, runStream, summary, usageEvent } from './stream.js';
 import { makeCliModelLister, parseTabModels, suggestedModels } from './models.js';
 
 export function parseAgy(record, state) {
+  state.requireCompletion = true;
   const events = [];
   if (record.event === 'init') {
     state.sessionId = record.conversation_id || record.init?.conversation_id || state.sessionId;

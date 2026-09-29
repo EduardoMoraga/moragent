@@ -1,4 +1,4 @@
-import { which, run } from '../../core/exec.js';
+import { which, runAsync } from '../../core/exec.js';
 import { t } from '../../core/i18n.js';
 
 const localizedHint = (hint) => {
@@ -19,13 +19,15 @@ export function cliStatus({ bin, args = null, evaluate = null, installHint, logi
         detail: t(`${bin} está instalado; no expone un estado de sesión.`, `${bin} is installed; it exposes no session status.`),
         loginHint: localizedHint(loginHint),
       };
-      const result = run(bin, args, { timeoutMs: 3000 });
-      const ready = evaluate ? evaluate(result) : result.code === 0;
+      const result = await runAsync(bin, args, { timeoutMs: 3000 });
+      const ready = result.code === 0 && (evaluate ? evaluate(result) : true);
       return {
         ready,
-        detail: ready
-          ? t(`${bin} está instalado y autenticado.`, `${bin} is installed and authenticated.`)
-          : t(`${bin} está instalado, pero no está autenticado.`, `${bin} is installed but not authenticated.`),
+        detail: result.code === 124
+          ? t(`La comprobación de ${bin} excedió el tiempo límite.`, `${bin} status check timed out.`)
+          : ready
+            ? t(`${bin} está instalado y autenticado.`, `${bin} is installed and authenticated.`)
+            : t(`${bin} está instalado, pero no está autenticado.`, `${bin} is installed but not authenticated.`),
         loginHint: localizedHint(loginHint),
       };
     } catch (error) {

@@ -29,8 +29,10 @@ export default {
     if (!id || typeof summary !== 'string' || !summary.trim()) throw new MoragentError('USAGE', this.usage);
     const before = getTask(root, id);
     const files = flagList(argv.flags.files);
+    // `mora wait` treats status=done as a completion barrier. Write the memory
+    // note first so a concurrent waiter cannot observe done before it exists.
+    await remember(root, before, summary.trim());
     const task = updateTask(root, id, { status: 'done', result: summary.trim(), files: files.length ? files : before.files || [] });
-    await remember(root, task, summary.trim());
     await refreshBrain(root);
     if (ctx.json) json({ ok: true, task });
     else ok(t(`${task.id} terminada.`, `${task.id} done.`));

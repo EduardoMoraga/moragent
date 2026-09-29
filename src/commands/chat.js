@@ -18,7 +18,7 @@ export default {
       if (e?.code !== 'ERR_MODULE_NOT_FOUND') throw e;
       throw new MoragentError('NO_TUI', t('La interfaz todavía no está instalada.', 'The interface is not installed yet.'), 'mora status');
     }
-    const engine = await createEngine({ root: ctx.root, config: ctx.config });
+    const engine = await createEngine({ root: ctx.root, config: ctx.config, lang: typeof argv.flags.lang === 'string' ? ctx.lang : null });
     await engine.refreshProviders();
     engine.welcome({ brief: true });
     await tui.runInline({ engine });

@@ -82,6 +82,18 @@ test('decode keys from raw mode sequences', () => {
   assert.deepEqual(decodeKeys('/salir\r').map((k) => k.name), ['text', 'text', 'text', 'text', 'text', 'text', 'enter']);
 });
 
+test('line editor moves and deletes whole non-BMP characters', () => {
+  const editor = new LineEditor();
+  editor.setValue('a😀b');
+  editor.handle({ name: 'left' });
+  editor.handle({ name: 'left' });
+  editor.handle({ name: 'backspace' });
+  assert.equal(editor.value, '😀b');
+  editor.handle({ name: 'right' });
+  editor.handle({ name: 'backspace' });
+  assert.equal(editor.value, 'b');
+});
+
 test('render agent cards, markdown, narrow status and new message indicator', () => {
   const state = sampleState();
   state.messages.push({ id: 'md', from: 'orchestrator', text: '**Plan**\n- uno\n- dos', at: Date.now() });

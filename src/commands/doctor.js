@@ -34,7 +34,7 @@ function gitCheck(root) {
   return check('system', 'git', 'ok', 'git', v || '');
 }
 
-function cliChecks(catalog, crewClis) {
+function cliChecks(catalog, crewClis, nativeApiReady = false) {
   const res = [];
   const anyInstalled = catalog.some((x) => x.installed);
   for (const x of catalog) {
@@ -49,8 +49,11 @@ function cliChecks(catalog, crewClis) {
       res.push(check('clis', x.id, r.code === 0 ? 'ok' : 'warn', x.label, detail, r.code === 0 ? '' : x.auth || ''));
       continue;
     }
-    const status = used ? 'fail' : !crewClis.length && !anyInstalled ? 'fail' : 'skip';
-    const detail = used ? t('lo usa tu equipo y no está instalado', 'your crew uses it and it is not installed') : t('no instalado (opcional)', 'not installed (optional)');
+    const status = used ? nativeApiReady ? 'warn' : 'fail' : !crewClis.length && !anyInstalled ? 'fail' : 'skip';
+    const detail = used
+      ? nativeApiReady ? t('panel externo no disponible; la app nativa puede usar la API', 'external pane unavailable; the native app can use the API')
+        : t('lo usa tu equipo y no está instalado', 'your crew uses it and it is not installed')
+      : t('no instalado (opcional)', 'not installed (optional)');
     res.push(check('clis', x.id, status, x.label, detail, x.install || x.docs || ''));
   }
   return res;
@@ -146,13 +149,29 @@ async function projectChecks(root) {
   return { checks: res, cfg };
 }
 
-export async function diagnose(root) {
+async function nativeProviderStatus(id) {
+  const { getProvider } = await import('../providers/index.js');
+  return getProvider(id).status();
+}
+
+export async function diagnose(root, { catalog = null, providerStatus = nativeProviderStatus } = {}) {
   const checks = [nodeCheck(), gitCheck(root)];
   let cfg = null;
   let project = [];
   if (root) ({ checks: project, cfg } = await projectChecks(root));
+  let nativeApiReady = false;
+  if (cfg?.orchestrator && !CLI_IDS.includes(cfg.orchestrator)) {
+    try {
+      const status = await providerStatus(cfg.orchestrator);
+      nativeApiReady = status?.ready === true;
+      checks.push(check('providers', cfg.orchestrator, nativeApiReady ? 'ok' : 'fail', cfg.orchestrator,
+        status?.detail || t('API no disponible', 'API unavailable'), nativeApiReady ? '' : '/login'));
+    } catch (error) {
+      checks.push(check('providers', cfg.orchestrator, 'fail', cfg.orchestrator, error.message, '/login'));
+    }
+  }
   const crewClis = cfg ? [...new Set(Object.values(cfg.crew || {}).map((m) => m.cli))] : [];
-  checks.push(...cliChecks(await cliCatalog(), crewClis));
+  checks.push(...cliChecks(catalog || await cliCatalog(), crewClis, nativeApiReady));
   const mux = await muxChecks(cfg?.mux || 'auto');
   checks.push(...mux.checks, ...(await brainChecks(cfg)), ...project);
   const summary = { ok: 0, warn: 0, fail: 0, skip: 0 };
@@ -163,6 +182,7 @@ export async function diagnose(root) {
 const ICON = { ok: () => c.green('✓'), warn: () => c.yellow('!'), fail: () => c.red('✗'), skip: () => c.dim('·') };
 const GROUPS = [
   ['system', { es: 'Sistema', en: 'System' }],
+  ['providers', { es: 'Proveedor nativo', en: 'Native provider' }],
   ['clis', { es: 'CLIs de agentes', en: 'Agent CLIs' }],
   ['mux', { es: 'Multiplexores', en: 'Multiplexers' }],
   ['brain', { es: 'Obsidian', en: 'Obsidian' }],
@@ -186,7 +206,9 @@ function render(r) {
   const line = `${c.green(`${s.ok} ok`)} · ${c.yellow(`${s.warn} ${t('avisos', 'warnings')}`)} · ${c.red(`${s.fail} ${t('errores', 'errors')}`)}`;
   out(r.ok ? `${c.green('✓')} ${t('Todo listo', 'All good')}  ${c.dim(line)}` : `${c.red('✗')} ${t('Hay que arreglar lo marcado con ✗', 'Fix the items marked ✗')}  ${line}`);
   if (!r.root) out(c.dim(t('  Fuera de un proyecto. Crea uno con: mora init', '  Not inside a project. Create one with: mora init')));
-  out(c.dim(t('  Autenticación: abre cada CLI una vez para iniciar sesión (claude → /login, codex login…).', '  Auth: open each CLI once to sign in (claude → /login, codex login…).')));
+  out(c.dim(r.checks.some((x) => x.group === 'providers' && x.status === 'ok')
+    ? t('  API nativa lista; los CLIs sólo son necesarios para paneles externos.', '  Native API ready; CLIs are only needed for external panes.')
+    : t('  Autenticación: abre cada CLI una vez para iniciar sesión (claude → /login, codex login…).', '  Auth: open each CLI once to sign in (claude → /login, codex login…).')));
 }
 
 export default {

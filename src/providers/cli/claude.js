@@ -4,6 +4,7 @@ import { resultOk, runStream, summary, usageEvent } from './stream.js';
 import { makeCliModelLister, suggestedModels } from './models.js';
 
 export function parseClaude(record, state) {
+  state.requireCompletion = true;
   const events = [];
   if (record.type === 'system' && record.subtype === 'init') {
     state.sessionId = record.session_id || state.sessionId;

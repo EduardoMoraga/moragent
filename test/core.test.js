@@ -9,7 +9,55 @@ import { defaultConfig, PRESETS } from '../src/core/config.js';
 import { findRoot, dirs } from '../src/core/paths.js';
 import { assignClis, scaffold } from '../src/commands/init.js';
 import { syncProject } from '../src/core/sync.js';
-import { setExec, resetExec, run } from '../src/core/exec.js';
+import { setExec, resetExec, run, runAsync, spawnDetached } from '../src/core/exec.js';
+import { openPrivateLog, writeBoundedPrivateLog } from '../src/core/private-log.js';
+
+test('detached process logs are private even with a permissive process umask', { skip: process.platform === 'win32' }, () => {
+  const root = tmp();
+  const previousUmask = process.umask(0o022);
+  try {
+    const logFile = path.join(root, 'background.log');
+    const child = spawnDetached(process.execPath, ['-e', ''], { cwd: root, logFile });
+    assert.ok(child.pid > 0);
+    assert.equal(fs.statSync(logFile).mode & 0o777, 0o600);
+  } finally {
+    process.umask(previousUmask);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('private logs tighten old permissions and refuse a final-path symlink', { skip: process.platform === 'win32' }, () => {
+  const root = tmp();
+  try {
+    const logFile = path.join(root, 'old.log');
+    fs.writeFileSync(logFile, 'old\n', { mode: 0o644 });
+    fs.chmodSync(logFile, 0o644);
+    const fd = openPrivateLog(logFile);
+    fs.closeSync(fd);
+    assert.equal(fs.statSync(logFile).mode & 0o777, 0o600);
+
+    const link = path.join(root, 'link.log');
+    fs.symlinkSync(logFile, link);
+    assert.throws(() => openPrivateLog(link));
+    assert.equal(fs.readFileSync(logFile, 'utf8'), 'old\n');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('bounded private logs keep the recent tail and mark omitted content', () => {
+  const root = tmp();
+  try {
+    const logFile = path.join(root, 'bounded.log');
+    const fd = openPrivateLog(logFile);
+    try {
+      writeBoundedPrivateLog(fd, 'first event\n'.repeat(10), 128);
+      writeBoundedPrivateLog(fd, 'RECENT-EVENT\n', 128);
+    } finally { fs.closeSync(fd); }
+    const text = fs.readFileSync(logFile, 'utf8');
+    assert.ok(Buffer.byteLength(text) <= 128);
+    assert.match(text, /earlier log data omitted/);
+    assert.match(text, /RECENT-EVENT/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mora-core-'));
 
@@ -93,6 +141,21 @@ test('exec seam replaces run()', () => {
   resetExec();
 });
 
+test('asynchronous CLI probes keep the event loop responsive and time out', async () => {
+  const pending = runAsync(process.execPath, ['-e', 'setTimeout(() => console.log("ready"), 100)'], { timeoutMs: 1000 });
+  let ticked = false;
+  setTimeout(() => { ticked = true; }, 20);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(ticked, true);
+  const result = await pending;
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout.trim(), 'ready');
+
+  const timedOut = await runAsync(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { timeoutMs: 50 });
+  assert.equal(timedOut.code, 124);
+  assert.match(timedOut.stderr, /Timed out/);
+});
+
 test('hooks merge into existing Claude settings and Codex config without overriding', async () => {
   const { installClaudeHook, installCodexHook } = await import('../src/core/hooks.js');
   const root = tmp();
@@ -117,7 +180,7 @@ test('hooks merge into existing Claude settings and Codex config without overrid
 });
 
 test('windows quoting keeps spaced paths and metacharacters as one literal argument', async () => {
-  const { shq, winQuote, which } = await import('../src/core/exec.js');
+  const { shq, winQuote, which, spawnPlan } = await import('../src/core/exec.js');
   assert.equal(shq('C:\\Program Files\\nodejs\\node.exe', 'win32'), '"C:\\Program Files\\nodejs\\node.exe"');
   assert.equal(shq('Bash(npm test:*)', 'win32'), '"Bash(npm test:*)"');
   assert.equal(winQuote('obsidian://open?vault=V&file=F'), '"obsidian://open?vault=V&file=F"');
@@ -125,6 +188,12 @@ test('windows quoting keeps spaced paths and metacharacters as one literal argum
   assert.equal(shq("it's", 'linux'), "'it'\\''s'", 'POSIX quoting unchanged');
   assert.equal(which(process.execPath), process.execPath, 'absolute paths resolve to themselves');
   assert.equal(which(''), null);
+  assert.deepEqual(spawnPlan('codex', ['exec', 'task & verify'], 'linux'), {
+    file: 'codex', argv: ['exec', 'task & verify'], shell: false,
+  });
+  assert.deepEqual(spawnPlan('C:\\Program Files\\nodejs\\codex.cmd', ['exec', 'task & verify'], 'win32'), {
+    file: '"C:\\Program Files\\nodejs\\codex.cmd" exec "task & verify"', argv: [], shell: true,
+  });
 });
 
 test('findRoot never crosses into a project above the enclosing git repo', () => {

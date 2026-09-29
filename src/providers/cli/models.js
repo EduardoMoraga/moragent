@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { run } from '../../core/exec.js';
+import { runAsync } from '../../core/exec.js';
 
 const cache = new Map();
 const ANSI = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+const MODEL_CATALOG_TIMEOUT_MS = 8000;
 
 const clean = (value) => String(value || '').replace(ANSI, '').trim();
 
@@ -56,21 +57,24 @@ export function codexSuggestions() {
 
 export function makeCliModelLister({ key, command, args = [], parse, fallback }) {
   return async function listModels() {
-    if (cache.has(key)) return (await cache.get(key)).map((model) => ({ ...model }));
-    const pending = Promise.resolve().then(() => {
+    if (cache.has(key)) return (await cache.get(key)).models.map((model) => ({ ...model }));
+    const pending = Promise.resolve().then(async () => {
       try {
         if (command) {
-          const result = run(command, args, { timeoutMs: 3000 });
+          const result = await runAsync(command, args, { timeoutMs: MODEL_CATALOG_TIMEOUT_MS });
           if (result?.code === 0) {
             const models = normalizeModels(parse?.(result.stdout || '') || []);
-            if (models.length) return models;
+            if (models.length) return { models, live: true };
           }
         }
       } catch { /* fall through to stable suggestions */ }
-      try { return normalizeModels(typeof fallback === 'function' ? fallback() : fallback); } catch { return []; }
+      try { return { models: normalizeModels(typeof fallback === 'function' ? fallback() : fallback), live: false }; }
+      catch { return { models: [], live: false }; }
     });
     cache.set(key, pending);
-    return (await pending).map((model) => ({ ...model }));
+    const result = await pending;
+    if (!result.live && cache.get(key) === pending) cache.delete(key);
+    return result.models.map((model) => ({ ...model }));
   };
 }
 
