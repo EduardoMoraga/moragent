@@ -23,14 +23,18 @@ major=$(node -p "process.versions.node.split('.')[0]")
 [ "$major" -ge 18 ] || { need_node; exit 1; }
 command -v npm >/dev/null 2>&1 || fail "npm no está disponible / npm is not available"
 
-# npm registry when the package is published there, otherwise the GitHub tarball
-# (a `github:` git spec installs as a dangling symlink with `npm i -g` on npm 10).
+# Install a selected Git branch directly (for previews); otherwise use npm when
+# published, falling back to the default Git branch when the registry is unavailable.
+branch=${MORAGENT_BRANCH:-master}
+case "$branch" in
+  ''|/*|*/|*//*|*..*|*[!A-Za-z0-9._/-]*) fail "MORAGENT_BRANCH no es una rama válida / is not a valid branch name" ;;
+esac
 pkg="moragent"
-if [ "${MORAGENT_FROM_GIT:-0}" = "1" ] || ! npm view moragent version >/dev/null 2>&1; then
-  pkg="https://github.com/EduardoMoraga/moragent/archive/refs/heads/master.tar.gz"
+if [ "$branch" != "master" ] || [ "${MORAGENT_FROM_GIT:-0}" = "1" ] || ! npm view moragent version >/dev/null 2>&1; then
+  pkg="https://github.com/EduardoMoraga/moragent/archive/refs/heads/${branch}.tar.gz"
 fi
 
-info "Instalando MORAGENT / Installing MORAGENT"
+info "Instalando MORAGENT desde ${branch} / Installing MORAGENT from ${branch}"
 if npm i -g "$pkg"; then
   :
 else

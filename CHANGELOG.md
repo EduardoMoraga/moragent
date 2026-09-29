@@ -12,6 +12,7 @@
 - Native-engine workers now use private project snapshots. Git projects keep their history in a separate clone and include dirty/untracked files; conflicting edits or private commits preserve the worker copy instead of overwriting the project.
 - The live terminal view now summarizes the crew (active, completed, blocked and failed), with each active worker's provider, task, elapsed time and activity; Tab includes recent completed-worker logs and the roster compacts on narrow terminals.
 - Optional API and foreground CLI logs are private and bounded to 5 MiB by default, with configurable limits and an omission marker. API event records remain valid JSONL when older history is rotated out.
+- The macOS/Linux and Windows one-line installers accept `MORAGENT_BRANCH`, so a GitHub preview branch can be installed directly without cloning or switching branches by hand.
 
 ### Fixed
 - The `/model` picker no longer marks every catalog-listed model with a readiness checkmark; it distinguishes unverified model access from disconnected engines in English and Spanish.

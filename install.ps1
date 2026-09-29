@@ -14,13 +14,17 @@ $major = [int](& node -p "process.versions.node.split('.')[0]")
 if ($major -lt 18) { Fail "Node.js >= 18 requerido. Instala LTS desde https://nodejs.org" }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Fail "npm no está disponible / npm is not available" }
 
-# npm registry when the package is published there, otherwise the GitHub tarball
-# (a `github:` git spec installs as a dangling symlink with `npm i -g` on npm 10).
+# Install a selected Git branch directly (for previews); otherwise use npm when
+# published, falling back to the default Git branch when the registry is unavailable.
+$branch = if ($env:MORAGENT_BRANCH) { $env:MORAGENT_BRANCH } else { "master" }
+if ($branch -notmatch '^[A-Za-z0-9._/-]+$' -or $branch.StartsWith('/') -or $branch.EndsWith('/') -or $branch.Contains('..') -or $branch.Contains('//')) {
+  Fail "MORAGENT_BRANCH no es una rama válida / is not a valid branch name"
+}
 $pkg = "moragent"
 npm view moragent version *> $null
-if ($env:MORAGENT_FROM_GIT -eq "1" -or $LASTEXITCODE -ne 0) { $pkg = "https://github.com/EduardoMoraga/moragent/archive/refs/heads/master.tar.gz" }
+if ($branch -ne "master" -or $env:MORAGENT_FROM_GIT -eq "1" -or $LASTEXITCODE -ne 0) { $pkg = "https://github.com/EduardoMoraga/moragent/archive/refs/heads/$branch.tar.gz" }
 
-Info "Instalando MORAGENT / Installing MORAGENT"
+Info "Instalando MORAGENT desde $branch / Installing MORAGENT from $branch"
 # npm is a native command: failures set $LASTEXITCODE instead of throwing.
 npm i -g $pkg
 if ($LASTEXITCODE -ne 0) {
