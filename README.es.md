@@ -30,13 +30,13 @@ irm https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.ps1 
 Para instalar la versión de trabajo multiagente en macOS/Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/refs/heads/codex/poder-agentico/install.sh | MORAGENT_BRANCH=codex/poder-agentico sh
+curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/cb4f39daf2cb2ed963756f1a246b5fc63cadaa78/install.sh | MORAGENT_BRANCH=codex/poder-agentico sh
 ```
 
 En Windows (PowerShell):
 
 ```powershell
-$env:MORAGENT_BRANCH='codex/poder-agentico'; irm https://raw.githubusercontent.com/EduardoMoraga/moragent/refs/heads/codex/poder-agentico/install.ps1 | iex
+$env:MORAGENT_BRANCH='codex/poder-agentico'; irm https://raw.githubusercontent.com/EduardoMoraga/moragent/cb4f39daf2cb2ed963756f1a246b5fc63cadaa78/install.ps1 | iex
 ```
 
 <sub>¿Prefieres npm? `npm i -g https://github.com/EduardoMoraga/moragent/archive/refs/heads/master.tar.gz` · probar sin instalar: `npx github:EduardoMoraga/moragent`</sub>

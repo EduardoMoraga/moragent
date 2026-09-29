@@ -30,13 +30,13 @@ irm https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.ps1 
 To install the multi-agent work-in-progress branch on macOS/Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/refs/heads/codex/poder-agentico/install.sh | MORAGENT_BRANCH=codex/poder-agentico sh
+curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/cb4f39daf2cb2ed963756f1a246b5fc63cadaa78/install.sh | MORAGENT_BRANCH=codex/poder-agentico sh
 ```
 
 On Windows (PowerShell):
 
 ```powershell
-$env:MORAGENT_BRANCH='codex/poder-agentico'; irm https://raw.githubusercontent.com/EduardoMoraga/moragent/refs/heads/codex/poder-agentico/install.ps1 | iex
+$env:MORAGENT_BRANCH='codex/poder-agentico'; irm https://raw.githubusercontent.com/EduardoMoraga/moragent/cb4f39daf2cb2ed963756f1a246b5fc63cadaa78/install.ps1 | iex
 ```
 
 <sub>Prefer npm? `npm i -g https://github.com/EduardoMoraga/moragent/archive/refs/heads/master.tar.gz` · try without installing: `npx github:EduardoMoraga/moragent`</sub>
