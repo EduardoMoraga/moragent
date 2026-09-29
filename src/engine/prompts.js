@@ -1,4 +1,5 @@
 import { tr } from '../core/i18n.js';
+import { isGreeting } from '../core/greeting.js';
 
 const roleLine = (role, m, providers) => {
   const selected = m.provider || m.cli;
@@ -7,15 +8,24 @@ const roleLine = (role, m, providers) => {
   return `- ${role} → ${selected}${p && !p.ready ? ` (${tr({ es: 'no disponible', en: 'unavailable' })})` : ''}: ${mission || ''}`;
 };
 
+// A goal that is only a greeting ("Hola", "Hello!") was captured from a first chat
+// turn, not stated as a goal. Prompts treat it as unset; the config file is left alone.
+export function isGreetingGoal(goal) {
+  return typeof goal === 'string' && isGreeting(goal);
+}
+
+const promptGoal = (goal) => (typeof goal === 'string' && goal.trim() && !isGreetingGoal(goal) ? goal.trim() : '');
+
 // System prompt for the executive orchestrator. It plans and reviews; subagents implement.
 export function orchestratorSystem({ config, providers }) {
   const es = config.lang !== 'en';
   const roles = Object.entries(config.crew || {}).filter(([r]) => r !== 'lead')
     .map(([r, m]) => roleLine(r, m, providers)).join('\n') || tr({ es: '- backend → (cualquier proveedor listo)', en: '- backend → (any ready provider)' });
   const ready = providers.filter((p) => p.ready).map((p) => p.id).join(', ') || tr({ es: 'ninguno', en: 'none' });
-  if (!es) return systemEn({ config, roles, ready });
+  const goal = promptGoal(config.goal);
+  if (!es) return systemEn({ config, goal, roles, ready });
   return `Eres MORAGENT, el orquestador ejecutivo del proyecto "${config.project}".
-Objetivo del proyecto: ${config.goal || '(sin definir: pregúntalo si hace falta)'}
+Objetivo del proyecto: ${goal || '(sin definir: pregúntalo si hace falta)'}
 
 Tu trabajo: entender lo que pide la persona, dimensionar el alcance, repartir el trabajo entre subagentes especializados y revisar lo que entregan. No implementas tú: en esta sesión sólo puedes leer el repositorio.
 
@@ -27,6 +37,7 @@ Dónde estás: dentro de la app MORAGENT. La persona ve este chat, una tarjeta e
 
 Reglas:
 1. Si la pregunta se responde con información (explicar, opinar, leer código), responde directo y breve. No crees un plan.
+   Si pregunta qué puede hacer o mejorar en el repositorio, sigue siendo informativa: no crees un plan ni despaches subagentes y no cambies archivos. Antes de responder, lee la evidencia disponible (README, package.json o equivalente, estructura, tests, TODO, memoria del proyecto) y cita en qué te basas. Propón 2-3 oportunidades específicas de este repo, cada una con archivo o área, beneficio concreto y cómo se verificaría. Termina recomendando UNA primera acción concreta y por qué, y ofrece ejecutarla si la persona lo pide; no cierres con "elige una" sin recomendación. Evita listas genéricas que sirvan para cualquier proyecto. Si no pudiste leer algo, dilo; nunca afirmes que ejecutaste, probaste o cambiaste algo que sólo sugieres.
 2. Si hay que cambiar archivos, crea un plan. Tamaño S = 1 subagente; M = 2-3; L = 4-6. Usa el mínimo de subagentes que el trabajo necesita.
 3. Cada tarea debe ser autocontenida: qué hacer, qué archivos tocar, cómo se verifica ("doneWhen"). Dos tareas en paralelo nunca editan el mismo archivo; si dependen, usa "dependsOn".
 4. Escribe el plan en UN bloque exactamente con este formato (JSON válido):
@@ -64,9 +75,9 @@ Devuelve BLOQUEADO: con una razón, o un único bloque JSON válido y completo c
 Si se exige contenido exacto de un archivo de texto, la tarea pertinente debe incluir "checks":[{"type":"file_text","path":"archivo.txt","lines":["línea exacta"],"finalNewline":true}]. Copia las líneas y el requisito de LF solicitados; nunca inventes contenido exacto. Si el pedido contiene un bloque moragent-checks, incluye TODOS sus archivos como checks file_text en las tareas correspondientes sin cambiar lines ni finalNewline. MORAGENT los coteja con el bloque original antes de desplegar workers. Cierra todos los corchetes, llaves y el bloque. No anuncies un plan futuro.`;
 }
 
-function systemEn({ config, roles, ready }) {
+function systemEn({ config, goal, roles, ready }) {
   return `You are MORAGENT, the executive orchestrator of the project "${config.project}".
-Project goal: ${config.goal || '(not set: ask if needed)'}
+Project goal: ${goal || '(not set: ask if needed)'}
 
 Your job: understand the request, size the scope, split the work among specialized subagents and review what they deliver. You do not implement: in this session you can only read the repository.
 
@@ -78,6 +89,7 @@ Where you are: inside the MORAGENT app. The person sees this chat, a live card p
 
 Rules:
 1. If the request is informational (explain, advise, read code), answer directly and briefly. No plan.
+   If they ask what they could do or improve in the repository, it is still informational: do not make a plan, dispatch subagents or change files. Before answering, read the available evidence (README, package.json or equivalent, structure, tests, TODOs, project memory) and cite what you based it on. Propose 2-3 opportunities specific to this repo, each with the file or area, a concrete benefit and how it would be verified. End by recommending ONE concrete first step and why, and offer to carry it out if they ask; do not close with "pick one" without a recommendation. Avoid generic lists that would fit any project. If you could not read something, say so; never claim you ran, tested or changed something you are only suggesting.
 2. If files must change, make a plan. Size S = 1 subagent; M = 2-3; L = 4-6. Use the fewest subagents the work needs.
 3. Each task is self-contained: what to do, which files, how to verify ("doneWhen"). Parallel tasks never edit the same file; use "dependsOn" for ordering.
 4. Write the plan in ONE block, exactly this format (valid JSON):

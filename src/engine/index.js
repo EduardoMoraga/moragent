@@ -13,6 +13,7 @@ import { createStore } from './store.js';
 import { extractPlan, stripPlan, assignProviders } from './plan.js';
 import { exactCheckTarget, literalSingleLineExpectation, parseExplicitFileChecks, requiresExactFileCheck, verifyTaskChecks } from './acceptance.js';
 import { orchestratorSystem, orchestratorRepairSystem, turnPrompt, reviewPrompt } from './prompts.js';
+import { isGreeting, normalizeGreeting } from '../core/greeting.js';
 import { inspectRecovery, listRecoveries } from './workspace.js';
 import { applyRecoveryAsync, createTaskWorkspaceAsync } from './workspace-async.js';
 
@@ -68,6 +69,13 @@ export function guessLang(text, fallback = 'en') {
   const es = (s.match(/ (el|la|los|las|que|de|con|para|una?|y|crea|quiero|haz|necesito) /g) || []).length;
   const en = (s.match(/ (the|and|with|for|create|make|want|need|build|a|an) /g) || []).length;
   return es > en ? 'es' : en > es ? 'en' : fallback;
+}
+
+// Match only complete, short greetings. A greeting followed by a request must bootstrap normally.
+function greetingLanguage(text) {
+  const greeting = normalizeGreeting(text);
+  if (isGreeting(greeting)) return /^(hello|hi|hey|hiya|howdy|greetings|good\s)/.test(greeting) ? 'en' : 'es';
+  return null;
 }
 
 const LOG_MAX = 400;
@@ -686,6 +694,20 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     const turn = sendTail.then(async () => {
       if (epoch !== turnEpoch) return;
       store.addMessage({ from: 'user', text: msg });
+      if (!root) {
+        const greetingLang = greetingLanguage(msg);
+        if (greetingLang) {
+          if (!languagePinned && store.state.lang !== greetingLang) {
+            setLang(greetingLang);
+            store.set({ lang: greetingLang });
+          }
+          store.addMessage({ from: 'system', text: t(
+            '¡Hola! Puedo ayudarte a explorar ideas o a construir algo aquí. No inicialicé el proyecto ni creé o modifiqué archivos. Cuéntame qué necesitas cuando quieras empezar.',
+            'Hello! I can help you explore ideas or build something here. I did not initialize the project or create or change any files. Tell me what you need when you are ready to start.',
+          ) });
+          return;
+        }
+      }
       const explicit = parseExplicitFileChecks(msg);
       if (explicit?.error) {
         const reasons = {

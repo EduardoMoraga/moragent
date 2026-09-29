@@ -47,7 +47,7 @@ Luego, dentro de cualquier repositorio:
 moragent
 ```
 
-Node ≥ 18, cero dependencias npm. Si la carpeta aún no tiene `.moragent/`, la aplicación inicia el proyecto en línea directamente dentro de la terminal.
+Node ≥ 18, cero dependencias npm. Si la carpeta aún no tiene `.moragent/`, un saludo como `Hola` responde sin inicializar ni escribir archivos. Al enviar una petición concreta de construcción, la aplicación inicia el proyecto en línea directamente dentro de la terminal.
 
 ---
 

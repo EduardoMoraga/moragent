@@ -1208,6 +1208,76 @@ test('engine: informational answer runs no subagents; empty folder becomes a pro
   assert.equal(listTasks(cwd).length, 0);
 });
 
+test('a first greeting answers in its language without provider calls or project files', async () => {
+  for (const [message, expectedLang, reply] of [
+    ['Hola', 'es', /No inicialicé el proyecto ni creé o modifiqué archivos/],
+    ['  ¡Hóla MORAGENT!  ', 'es', /No inicialicé el proyecto ni creé o modifiqué archivos/],
+    ['¿Qué tal?', 'es', /No inicialicé el proyecto ni creé o modifiqué archivos/],
+    ['Hello', 'en', /I did not initialize the project or create or change any files/],
+    ['Hi!', 'en', /I did not initialize the project or create or change any files/],
+    ['Hey...', 'en', /I did not initialize the project or create or change any files/],
+  ]) {
+    const cwd = tmp();
+    const calls = [];
+    const provider = {
+      id: 'test', label: 'Test', kind: 'api',
+      status: async () => { calls.push('status'); return { ready: true }; },
+      run: async () => { calls.push('run'); return { ok: true, text: 'Unexpected.' }; },
+    };
+    const providers = {
+      listProviders: () => { calls.push('list'); return [provider]; },
+      getProvider: () => { calls.push('get'); return provider; },
+    };
+    let engine;
+    try {
+      engine = await createEngine({ root: null, cwd, providers });
+      await engine.send(message);
+      assert.deepEqual(calls, [], `${message}: provider must remain untouched`);
+      assert.deepEqual(fs.readdirSync(cwd), [], `${message}: folder must remain empty`);
+      assert.equal(engine.root, null);
+      assert.equal(engine.store.state.initialized, false);
+      assert.equal(engine.store.state.lang, expectedLang);
+      assert.equal(engine.store.state.messages[0].text, message.trim());
+      assert.match(engine.store.state.messages[1].text, reply);
+    } finally {
+      engine?.stop();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+});
+
+test('a greeting does not consume the first concrete request or turn a request into a greeting', async () => {
+  for (const firstMessage of [null, 'Hola']) {
+    const cwd = tmp();
+    const request = 'Hola, crea una API de tareas';
+    const calls = [];
+    const provider = {
+      id: 'test', label: 'Test', kind: 'api',
+      status: async () => ({ ready: true }),
+      run: async ({ prompt }) => { calls.push(prompt); return { ok: true, text: 'Puedo construir esa API.' }; },
+    };
+    const providers = { listProviders: () => [provider], getProvider: () => provider };
+    let engine;
+    try {
+      engine = await createEngine({ root: null, cwd, providers });
+      if (firstMessage) {
+        await engine.send(firstMessage);
+        assert.deepEqual(fs.readdirSync(cwd), []);
+        assert.equal(calls.length, 0);
+      }
+      await engine.send(request);
+      assert.equal(engine.store.state.initialized, true);
+      assert.equal(engine.config.goal, request);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(cwd, '.moragent', 'moragent.json'), 'utf8')).goal, request);
+      assert.equal(calls.length, 1);
+      assert.match(calls[0], /Hola, crea una API de tareas/);
+    } finally {
+      engine?.stop();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+});
+
 test('an API-only first run creates, delegates and reopens with the same orchestrator', async () => {
   const cwd = tmp();
   let turns = 0;

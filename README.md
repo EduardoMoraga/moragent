@@ -47,7 +47,7 @@ Then, inside any repo:
 moragent
 ```
 
-Node ≥ 18, zero npm dependencies. If the folder has no `.moragent/` yet, the app runs project initialization inline right inside the terminal.
+Node ≥ 18, zero npm dependencies. If the folder has no `.moragent/` yet, a greeting such as `Hello` is answered without initialization or file writes. Sending a concrete build request initializes the project inline in the terminal.
 
 ---
 

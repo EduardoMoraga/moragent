@@ -8,6 +8,7 @@ import { flagList } from '../core/args.js';
 import { t, setLang, getLang } from '../core/i18n.js';
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter.js';
 import { bm25Search } from './search.js';
+import { isGreeting } from '../core/greeting.js';
 
 export const TIERS = ['canonical', 'episodic', 'transient'];
 export const KINDS = ['decision', 'convention', 'fact', 'episode', 'handoff', 'note'];
@@ -307,7 +308,11 @@ export function contextPack({ root, role = 'agent', query = '', budget = 6000, i
   setLang(currentLang);
 
   const episodicLimit = cfg?.memory?.episodicInContext ?? 8;
-  const canonicalNotes = list({ root: r, tier: 'canonical' });
+  const canonicalNotes = list({ root: r, tier: 'canonical' }).filter((note) => {
+    if (note.id !== 'project') return true;
+    // `mora init` appends provenance after the goal; judge only the goal paragraph.
+    return !isGreeting((note.body || '').split(/\n\s*\n/, 1)[0]);
+  });
   const episodicNotes = list({ root: r, tier: 'episodic', limit: episodicLimit });
 
   const handledIds = new Set();

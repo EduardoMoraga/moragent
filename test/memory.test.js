@@ -300,6 +300,19 @@ test('memory: contextPack generates bilingual output, previews body and includes
   assert.ok(packEn.length <= 4000);
 });
 
+test('memory: a captured greeting is not repeated as the project goal', () => {
+  const root = tmp();
+  fs.writeFileSync(path.join(dirs(root).canonical, 'project.md'), `---\nid: project\ntier: canonical\nkind: fact\ntitle: Project\n---\nHola\n\nCreado con mora init.\n`);
+  add({ root, tier: 'canonical', title: 'Architecture', body: 'Use a modular CLI architecture.' });
+  const pack = contextPack({ root, role: 'lead', lang: 'es' });
+  assert.doesNotMatch(pack, /\[\[project\]\]|\nHola\n/);
+  assert.match(pack, /modular CLI architecture/);
+
+  const realGoal = tmp();
+  fs.writeFileSync(path.join(dirs(realGoal).canonical, 'project.md'), `---\nid: project\ntier: canonical\nkind: fact\ntitle: Project\n---\nConstruir un CLI local para orquestar agentes.\n`);
+  assert.match(contextPack({ root: realGoal, role: 'lead', lang: 'es' }), /Construir un CLI local para orquestar agentes/);
+});
+
 test('CLI: memory command add, list, recall, show, promote, gc with --json', async () => {
   const root = tmp();
   const ctx = { root, json: true, lang: 'en' };
@@ -864,5 +877,3 @@ test('capture: real Claude Code transcript format and bilingual headers (es vs e
   assert.match(rawEn, /## Files Touched/);
   assert.match(rawEn, /## Commands/);
 });
-
-
