@@ -21,13 +21,13 @@
 To install or update this v5.3 beta on macOS/Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/d978ad3/install.sh | MORAGENT_BRANCH=codex/poder-agentico sh
+curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/codex/poder-agentico/install.sh | MORAGENT_BRANCH=codex/poder-agentico sh
 ```
 
 On Windows (PowerShell):
 
 ```powershell
-$env:MORAGENT_BRANCH='codex/poder-agentico'; irm https://raw.githubusercontent.com/EduardoMoraga/moragent/d978ad3/install.ps1 | iex
+$env:MORAGENT_BRANCH='codex/poder-agentico'; irm https://raw.githubusercontent.com/EduardoMoraga/moragent/codex/poder-agentico/install.ps1 | iex
 ```
 
 <sub>The stable branch remains `master`. To install without the script: `npm i -g https://github.com/EduardoMoraga/moragent/archive/refs/heads/codex/poder-agentico.tar.gz`.</sub>

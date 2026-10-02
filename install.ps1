@@ -25,6 +25,8 @@ npm view moragent version *> $null
 if ($branch -ne "master" -or $env:MORAGENT_FROM_GIT -eq "1" -or $LASTEXITCODE -ne 0) { $pkg = "https://github.com/EduardoMoraga/moragent/archive/refs/heads/$branch.tar.gz" }
 
 Info "Instalando MORAGENT desde $branch / Installing MORAGENT from $branch"
+$installedPrefix = (& npm prefix -g | Select-Object -Last 1).Trim()
+$installedMora = Join-Path $installedPrefix 'mora.cmd'
 # npm is a native command: failures set $LASTEXITCODE instead of throwing.
 npm i -g $pkg
 if ($LASTEXITCODE -ne 0) {
@@ -33,16 +35,18 @@ if ($LASTEXITCODE -ne 0) {
   New-Item -ItemType Directory -Force -Path $prefix | Out-Null
   npm i -g --prefix $prefix $pkg
   if ($LASTEXITCODE -ne 0) { Fail "npm install falló / npm install failed" }
+  $installedMora = Join-Path $prefix 'mora.cmd'
   # On Windows npm puts global shims directly in the prefix, not in prefix\bin.
   if (($env:Path -split ';') -notcontains $prefix) { Warn "Agrega a PATH / Add to PATH: $prefix" }
 }
 
-if (Get-Command mora -ErrorAction SilentlyContinue) {
+if (Test-Path $installedMora) {
+  Info "Versión instalada / Installed version: $(& $installedMora --version)"
   Info "Ejecutando doctor / Running doctor"
-  mora doctor
+  & $installedMora doctor
   if ($LASTEXITCODE -ne 0) { Warn "doctor reportó advertencias; la instalación del CLI continuó." }
 } else {
-  Warn "mora aún no está en PATH. Abre una nueva terminal o ajusta PATH."
+  Fail "No encontré el ejecutable instalado / Installed executable not found: $installedMora"
 }
 
 Write-Host "`nSiguiente paso / Next step: cd tu-proyecto && mora"

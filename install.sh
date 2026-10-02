@@ -35,23 +35,26 @@ if [ "$branch" != "master" ] || [ "${MORAGENT_FROM_GIT:-0}" = "1" ] || ! npm vie
 fi
 
 info "Instalando MORAGENT desde ${branch} / Installing MORAGENT from ${branch}"
+installed_mora="$(npm prefix -g)/bin/mora"
 if npm i -g "$pkg"; then
   :
 else
   warn "Falló instalación global (permisos). Reintentando en ~/.local / Global install failed, retrying in ~/.local"
   mkdir -p "$HOME/.local"
   npm i -g --prefix "$HOME/.local" "$pkg"
+  installed_mora="$HOME/.local/bin/mora"
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) : ;;
     *) warn "Agrega a PATH: export PATH=\"$HOME/.local/bin:$PATH\"" ;;
   esac
 fi
 
-if command -v mora >/dev/null 2>&1; then
+if [ -x "$installed_mora" ]; then
+  info "Versión instalada / Installed version: $("$installed_mora" --version)"
   info "Ejecutando doctor / Running doctor"
-  mora doctor || true
+  "$installed_mora" doctor || true
 else
-  warn "mora aún no está en PATH. Abre una nueva terminal o ajusta PATH."
+  fail "No encontré el ejecutable instalado / Installed executable not found: $installed_mora"
 fi
 
 printf '\n%s\n' "Siguiente paso / Next step: cd tu-proyecto && mora"
