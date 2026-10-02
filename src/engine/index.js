@@ -764,6 +764,21 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
       case 'help': case 'ayuda':
         store.addMessage({ from: 'system', text: helpText() });
         return;
+      case 'update': case 'actualizar': {
+        if (rejectBusyConfiguration()) return;
+        if (list.some((arg) => arg !== '--check')) {
+          store.addMessage({ from: 'system', text: t('Uso: /update [--check]', 'Usage: /update [--check]') });
+          return;
+        }
+        const { selfUpdate, updateMessage } = await import('../core/self-update.js');
+        try {
+          const result = await selfUpdate({ check: list.includes('--check') });
+          store.addMessage({ from: 'system', text: updateMessage(result, store.state.lang) });
+        } catch (error) {
+          store.addMessage({ from: 'system', text: t(`No se pudo comprobar la actualización: ${error.message}`, `Could not check for updates: ${error.message}`) });
+        }
+        return;
+      }
       case 'idioma': case 'language': case 'lang': {
         const requested = String(list[0] || '').toLowerCase();
         if (!['es', 'en'].includes(requested)) {
@@ -1174,6 +1189,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     return t(`Escribe lo que necesitas y el orquestador decide si responde o despliega agentes.
 /tarea <rol> <texto>  desplegar un agente directo según su misión
 /login            conectar suscripciones o API keys
+/update [--check] comprobar o actualizar MORAGENT desde Git
 /equipo           ver el equipo · /equipo <rol> <motor> para cambiarlo
 /orquestador <m>  elegir el motor del orquestador
 /modelo [rol] <n> ver o cambiar el modelo (del orquestador o de un rol)
@@ -1189,6 +1205,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /salir            salir (Ctrl+C dos veces)`, `Type what you need; the orchestrator either answers or deploys agents.
 /task <role> <text>   deploy one agent directly by its mission
 /login            connect subscriptions or API keys
+/update [--check] check or update MORAGENT from Git
 /crew             show the crew · /crew <role> <engine> to change it
 /orchestrator <e> pick the orchestrator engine
 /model [role] <n> show or change the model (orchestrator or a role)

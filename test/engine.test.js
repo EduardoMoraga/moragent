@@ -298,7 +298,7 @@ test('plan parsing preserves valid plans and rejects malformed dependency graphs
   const exact = { type: 'file_text', path: 'notes/hello.txt', lines: ['hola'], finalNewline: true };
   assert.deepEqual(normalizePlan({ tasks: [{ id: 't1', prompt: 'write', checks: [exact] }] }).tasks[0].checks, [exact]);
   for (const badPath of ['../outside.txt', '/absolute.txt', 'C:\\absolute.txt',
-    '.git/HEAD', 'nested/node_modules/exact.txt', '.moragent/runs/exact.txt', 'nested/.moragent/tasks/exact.txt']) {
+    '.git/HEAD', 'nested/node_modules/exact.txt', 'nested/.venv/exact.txt', 'nested/.venv-inbound/exact.txt', '.moragent/runs/exact.txt', 'nested/.moragent/tasks/exact.txt']) {
     assert.equal(normalizePlan({ tasks: [{ id: 't1', prompt: 'write', checks: [{ ...exact, path: badPath }] }] }).error, 'invalid-check');
   }
   assert.equal(normalizePlan({ tasks: [{ id: 't1', prompt: 'write', checks: [{ ...exact, lines: ['bad\nline'] }] }] }).error, 'invalid-check');
@@ -677,7 +677,7 @@ test('explicit user checks validate paths and preserve multi-line literals inclu
   assert.equal(parseExplicitFileChecks('```moragent-checks\n{"files":[]}')?.error, 'missing-fence');
   assert.equal(parseExplicitFileChecks('```moragent-checks\n{broken}\n```')?.error, 'invalid-json');
   assert.equal(parseExplicitFileChecks(block([{ path: '../escape.txt', lines: ['bad'], finalNewline: true }]))?.error, 'invalid-check');
-  for (const path of ['.git/HEAD', 'node_modules/exact.txt', '.moragent/runs/exact.txt', 'nested/.moragent/memory/exact.txt']) {
+  for (const path of ['.git/HEAD', 'node_modules/exact.txt', '.venv/exact.txt', '.venv_bosch/exact.txt', '.moragent/runs/exact.txt', 'nested/.moragent/memory/exact.txt']) {
     assert.equal(parseExplicitFileChecks(block([{ path, lines: ['bad'], finalNewline: true }]))?.error, 'invalid-check', path);
   }
   assert.equal(parseExplicitFileChecks(block([{ path: 'a.txt', lines: ['bad\nline'], finalNewline: true }]))?.error, 'invalid-check');

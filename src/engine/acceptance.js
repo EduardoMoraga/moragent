@@ -11,7 +11,7 @@ export function isValidFileTextCheck(check) {
   // Fold case so the rule is safe on case-insensitive macOS/Windows volumes.
   const excluded = parts.some((part, index) => {
     const name = part.toLowerCase();
-    return name === '.git' || name === 'node_modules'
+    return name === '.git' || name === 'node_modules' || name === '.venv' || /^\.venv[-_].+$/.test(name)
       || (name === '.moragent' && ['runs', 'tasks', 'sessions', 'memory'].includes(parts[index + 1]?.toLowerCase()));
   });
   const validPath = typeof check?.path === 'string' && check.path.length > 0 && check.path.length <= 500

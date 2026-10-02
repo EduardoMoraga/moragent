@@ -340,6 +340,30 @@ test('an external symlink prevents unsafe worker preparation', { skip: process.p
   }
 });
 
+test('a generated .venv with an external interpreter link does not block the project copy', { skip: process.platform === 'win32' }, () => {
+  const parent = temporary();
+  const root = path.join(parent, 'project');
+  let workspace;
+  try {
+    for (const directory of ['.venv', '.venv-inbound', '.venv_bosch']) {
+      fs.mkdirSync(path.join(root, directory, 'bin'), { recursive: true });
+      fs.symlinkSync('/Library/Frameworks/Python.framework/Versions/Current/bin/python3', path.join(root, directory, 'bin', 'python'));
+    }
+    fs.writeFileSync(path.join(root, 'source.py'), 'print("hello")\n');
+    execFileSync('git', ['init', '-q', root]);
+    execFileSync('git', ['-C', root, 'add', 'source.py']);
+    execFileSync('git', ['-C', root, '-c', 'user.name=MORAGENT Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'initial']);
+    workspace = createTaskWorkspace(root, 'T-0028');
+    for (const directory of ['.venv', '.venv-inbound', '.venv_bosch']) {
+      assert.equal(fs.existsSync(path.join(workspace.root, directory)), false);
+    }
+    assert.equal(fs.readFileSync(path.join(workspace.root, 'source.py'), 'utf8'), 'print("hello")\n');
+  } finally {
+    workspace?.discard();
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test('external symlinks inside node_modules are also rejected', { skip: process.platform === 'win32' }, () => {
   const parent = temporary();
   const root = path.join(parent, 'project');

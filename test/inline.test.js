@@ -58,6 +58,18 @@ test('inline slash menu uses English command names after switching language and 
   await done;
 });
 
+test('typing mora update inside MORAGENT invokes the native command, not the orchestrator', async () => {
+  const h = harness();
+  const done = runInline(h);
+  await h.send('mora update --check\r');
+  assert.deepEqual(h.calls.at(-1), { name: 'update', args: ['--check'] });
+  await h.send('/update\r');
+  assert.deepEqual(h.calls.at(-1), { name: 'update', args: [] });
+  assert.equal(h.calls.some((call) => call.name === 'send'), false);
+  await h.send('/exit\r');
+  await done;
+});
+
 test('inline /login masks an API key and never records it in terminal output', async () => {
   const h = harness();
   const done = runInline(h);

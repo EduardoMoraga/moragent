@@ -108,6 +108,7 @@ Escribe estos comandos dentro de `moragent`:
 
 - `/help` (o `/ayuda`): ver la lista de comandos disponibles
 - `/login`: conectar suscripciones o configurar claves de API
+- `/update` (o `mora update` dentro de la app): comprobar el remoto y actualizar una instalación enlazada a su repositorio Git; `--check` sólo comprueba. Reinicia la app tras actualizar. Las instalaciones sin origen verificable no se modifican.
 - `/equipo` (o `/crew`): ver el equipo actual · `/equipo <rol> <motor>` para reasignar roles. Si eliges una API, el worker nativo la usa y el panel externo conserva su CLI.
 - `/orquestador <m>` (o `/orchestrator`): elegir el motor del orquestador ejecutivo. Si no está disponible, MORAGENT anuncia un sustituto temporal y recupera la preferencia cuando vuelve a conectarse.
 - `/modelo` o `/modelo <rol>` (o `/model`): explorar modelos de todos los proveedores y elegir uno para el orquestador o un rol. `/modelo <nombre>` y `/modelo <rol> <nombre>` asignan el modelo directamente; `default` usa el predeterminado del motor elegido.

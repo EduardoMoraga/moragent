@@ -7,6 +7,8 @@ import { withPublicationLockSync } from './publication-lock.js';
 import { isValidFileTextCheck, verifyTaskChecks } from './acceptance.js';
 
 const IGNORED = new Set(['.git', 'node_modules']);
+const virtualEnv = (name) => /^\.venv(?:[-_][^/\\]+)?$/i.test(name);
+const ignored = (name) => IGNORED.has(name) || virtualEnv(name);
 const INTERNAL = new Set(['runs', 'tasks', 'sessions', 'memory']);
 const PROJECT_ID = '.project-id';
 
@@ -72,6 +74,9 @@ function copyProject(source, target, shouldCancel = () => false) {
       if (!rel) return true;
       if (rel.split(path.sep).includes('.git')) return false;
       const parts = rel.split(path.sep);
+      // A Python virtual environment is generated, often large, and its
+      // interpreter symlinks commonly point to the system installation.
+      if (parts.some(virtualEnv)) return false;
       if (parts.some((part, index) => part === 'runs' && parts[index - 1] === '.moragent')) return false;
       if (fs.lstatSync(entry).isSymbolicLink()) links.push(rel);
       return true;
@@ -144,7 +149,7 @@ function snapshot(root, dependencies = null, shouldCancel = () => false) {
         }
         continue;
       }
-      if (IGNORED.has(item.name)) continue;
+      if (ignored(item.name)) continue;
       if (path.basename(rel) === '.moragent' && INTERNAL.has(item.name)) continue;
       const name = rel ? path.join(rel, item.name) : item.name;
       const file = path.join(root, name);
@@ -340,7 +345,7 @@ function publishPaths(source, workspace, before, after, paths, shouldCancel = ()
 function validRecoveryPath(rel) {
   if (typeof rel !== 'string' || !rel || /[\u0000-\u001f\u007f]/.test(rel) || path.isAbsolute(rel) || path.normalize(rel) !== rel) return false;
   const parts = rel.split(path.sep);
-  if (parts.some((part) => !part || part === '.' || part === '..' || IGNORED.has(part))) return false;
+  if (parts.some((part) => !part || part === '.' || part === '..' || ignored(part))) return false;
   return !parts.some((part, index) => part === 'runs' && parts[index - 1] === '.moragent');
 }
 

@@ -25,6 +25,10 @@ claude · 1 agent working · /help
 - `/login` → provider picker, connected subscriptions switch the orchestrator without leaving the app;
   authentication uses a separate connection pane when available. API keys are masked, and OpenAI-compatible
   endpoints are configurable. No MORAGENT account or server.
+- `/update` and the exact in-app text `mora update` → native self-update path. It fetches the installed
+  Git checkout's configured upstream, refuses dirty tracked files or non-fast-forward history, and tells
+  the person to restart after a fast-forward. `--check` fetches but leaves HEAD unchanged. Unknown package
+  provenance is reported rather than guessed.
 - `/idioma <es|en>` (`/language`) changes the interface language without restarting. An initialized
   project persists the choice; for a new project, an explicit choice overrides first-message guessing.
 - The inline `/` menu displays command names in the active language (`/tarea` or `/task`, etc.)
@@ -262,7 +266,7 @@ integration, not proof that the acceptance criterion passed; the reviewer can re
 Plans may also include optional exact text checks on a task, for example
 `"checks":[{"type":"file_text","path":"hello.txt","lines":["hello"],"finalNewline":true}]`.
 `lines` holds text lines without newline characters; `finalNewline` explicitly controls the final LF.
-Check paths must be publishable project files: `.git`, `node_modules` and the excluded
+Check paths must be publishable project files: `.git`, `node_modules`, `.venv` (including `.venv-*` and `.venv_*`) and the excluded
 `.moragent/{runs,tasks,sessions,memory}` trees are rejected during request/plan validation.
 Before integration, MORAGENT compares the private file's UTF-8 bytes with the constructed expected
 bytes. A mismatch blocks publication, retains the private copy, and reports expected/actual byte
@@ -314,11 +318,12 @@ The user must inspect and correct that saved work manually.
 Legacy copies without a manifest remain manual-only. A dependent task snapshots after
 its prerequisites have integrated. This is edit isolation, **not an OS security sandbox**: a CLI with unrestricted filesystem access can
 still write outside its working directory. `node_modules` and internal `.moragent` run/task/session/
-memory state are copied for worker context but never integrated. Workspace copying can still take time
+memory state are copied for worker context but never integrated. Generated `.venv`, `.venv-*` and `.venv_*` trees are omitted
+from worker copies. Workspace copying can still take time
 on very large projects even though the terminal remains responsive; Windows/Linux terminal behavior
 and provider permissions need live validation.
 Internal symlinks are rebased to the private copy, including links under `node_modules`.
-An external symlink fails worker preparation rather than leaving a write-through path to the
+An external symlink outside an omitted virtual environment fails worker preparation rather than leaving a write-through path to the
 original filesystem. This is still not a sandbox against a CLI choosing an external path itself.
 For `node_modules`, snapshots record metadata (type, mode, size, inode, nanosecond mtime/ctime)
 without hashing dependency bytes. Ordinary changes block integration and retain the copy;

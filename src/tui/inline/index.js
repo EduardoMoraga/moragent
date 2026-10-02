@@ -239,6 +239,8 @@ export async function runInline({ engine, input = process.stdin, output = proces
       engine.store?.addMessage?.({ from: 'system', text: tr(`Error: ${error.message}`, `Error: ${error.message}`) });
       schedule();
     });
+    const update = /^(?:mora|moragent)\s+(?:update|actualizar)(?:\s+(--check))?$/i.exec(value);
+    if (update) { observe(engine.command('update', update[1] ? ['--check'] : [])); return; }
     if (!value.startsWith('/')) {
       // The engine serializes turns itself. Do not hold the terminal key loop
       // hostage to a slow provider: /cancel may be in this very same data chunk.
@@ -267,7 +269,7 @@ export async function runInline({ engine, input = process.stdin, output = proces
     const args = taskCommand ? [rest[0], rawArgs.slice(rest[0].length).trimStart()]
       : slash === '/plan' ? (rawArgs ? [rawArgs] : []) : rest;
     const work = engine.command(cmd, args);
-    if (['plan', 'tarea', 'task', 'desplegar', 'deploy'].includes(cmd)
+    if (['plan', 'tarea', 'task', 'desplegar', 'deploy', 'update', 'actualizar'].includes(cmd)
         || (['recuperaciones', 'recoveries'].includes(cmd) && ['aplicar', 'apply'].includes(rest[0]))) observe(work);
     else await work;
   }

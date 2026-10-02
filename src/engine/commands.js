@@ -29,6 +29,14 @@ export const COMMANDS = [
     group: 'config',
   },
   {
+    name: 'update',
+    aliases: ['actualizar'],
+    args: '[--check]',
+    es: 'comprobar o actualizar MORAGENT',
+    en: 'check or update MORAGENT',
+    group: 'config',
+  },
+  {
     name: 'orquestador',
     aliases: ['orchestrator'],
     args: '[motor]',

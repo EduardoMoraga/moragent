@@ -63,3 +63,12 @@ test('exploratory questions grant no mutation authority and forbid claiming unex
     for (const pattern of patterns) assert.match(prompt, pattern, `${lang}: ${pattern}`);
   }
 });
+
+test('orchestrator routes self-update to the native command without inventing remote status', () => {
+  for (const lang of ['es', 'en']) {
+    const prompt = orchestratorSystem({ config: config(lang, 'Build a CLI'), providers });
+    assert.match(prompt, /\/update --check/);
+    assert.match(prompt, lang === 'es' ? /No crees una tarea de subagente/ : /Do not plan a subagent task/);
+    assert.match(prompt, lang === 'es' ? /sin consultar el remoto/ : /without checking the remote/);
+  }
+});
