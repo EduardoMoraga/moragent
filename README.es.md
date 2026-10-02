@@ -58,7 +58,7 @@ claude · 1 agente trabajando · /help
 ```
 
 1. **Inicias `moragent`** en la terminal de tu proyecto. La app conserva el historial visible de la terminal y actualiza el trabajo activo en el mismo lugar.
-2. **Escribes `/login`** para ver todos los proveedores compatibles y su conexión. El login de una suscripción ocurre en esa misma terminal; las claves de API se escriben en un campo oculto.
+2. **Escribes `/login`** para ver todos los proveedores compatibles y su conexión. Al elegir una suscripción conectada, sigues en MORAGENT y cambias el orquestador. Si falta autenticación, se abre un panel de conexión separado cuando está disponible; las claves de API se escriben en un campo oculto.
 3. **Le hablas al orquestador ejecutivo** en lenguaje natural. Explora el contexto del proyecto, dimensiona el trabajo y elabora el plan de ejecución.
 4. **Los subagentes trabajan por dentro de la aplicación**, con actividad visible debajo de la conversación. Tab muestra los registros recientes. Si quieres abrir un subagente en un panel propio, usa `/abrir <rol|id>` (ej. `/abrir executor`).
 

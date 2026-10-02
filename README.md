@@ -58,7 +58,7 @@ claude · 1 agent working · /help
 ```
 
 1. **Launch `moragent`** in your project terminal. The app keeps the terminal's native scrollback and updates the active work in place.
-2. **Type `/login`** to see every supported provider and its connection status. A subscription login runs in the same terminal; API keys are entered with a masked prompt.
+2. **Type `/login`** to see every supported provider and its connection status. Selecting a connected subscription keeps you in MORAGENT and switches the orchestrator. If authentication is needed, it opens a separate connection pane when available; API keys use a masked prompt.
 3. **Talk to the executive orchestrator** in plain language. It explores the project context, scopes the work, and derives a concrete plan.
 4. **Subagents run inside the app**, with live activity below the conversation. Press Tab for recent logs. To open an agent in its own terminal pane, type `/open <role|id>` (e.g. `/open executor`).
 

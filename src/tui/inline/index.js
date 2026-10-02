@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { c, plain } from '../../core/log.js';
 import { LineEditor, TerminalKeyDecoder } from '../input.js';
 import { renderLive, renderFinal, visualRows, filterCommands } from './render.js';
@@ -40,7 +39,7 @@ function findAgent(state, ref) {
   return ref ? agents.find((a) => a.id === ref || a.taskId === ref || a.role === ref) : agents[0];
 }
 
-export async function runInline({ engine, input = process.stdin, output = process.stdout, spawnLogin = spawn }) {
+export async function runInline({ engine, input = process.stdin, output = process.stdout }) {
   const editor = new LineEditor({ commands: DEFAULT_COMMANDS.flatMap((x) => [x.name, ...(x.aliases || [])]) });
   const keyDecoder = new TerminalKeyDecoder();
   const ui = { input: '', showAgents: false, commands: menuCommands(engine.store?.state?.lang), menu: null, picker: null, prompt: null, showWelcome: false };
@@ -170,36 +169,22 @@ export async function runInline({ engine, input = process.stdin, output = proces
     }
   }
   async function runSubscriptionLogin(id) {
-    const command = engine.loginCommand?.(id);
-    if (!command?.length) { await engine.command('login', { id }); return; }
-    eraseLive();
-    output.write(`\n${tr('Conectando', 'Connecting')} ${id}…\n`);
-    input.off?.('data', onData);
-    input.pause?.();
-    if (input.isTTY && output.isTTY) output.write('\x1b[?2004l');
-    if (input.isTTY && input.setRawMode) input.setRawMode(false);
-    let error = null;
-    try {
-      await new Promise((resolve) => {
-        const child = spawnLogin(command[0], command.slice(1), { stdio: 'inherit', cwd: engine.root || process.cwd() });
-        child.once('error', (e) => { error = e.message; resolve(); });
-        child.once('close', (code) => { if (code) error = `${tr('salió con código', 'exited with code')} ${code}`; resolve(); });
-      });
-    } catch (e) {
-      error = e.message;
-    } finally {
-      if (!closed && input.isTTY && input.setRawMode) input.setRawMode(true);
-      if (!closed && input.isTTY && output.isTTY) output.write('\x1b[?2004h');
-      input.on?.('data', onData);
-      input.resume?.();
-      await engine.refreshProviders?.();
-      if (pendingModel?.provider === id && state().providers?.some((p) => p.id === id && p.ready)) {
-        const selected = pendingModel; pendingModel = null;
+    await engine.refreshProviders?.();
+    if (state().providers?.some((provider) => provider.id === id && provider.ready)) {
+      if (pendingModel?.provider === id) {
+        const selected = pendingModel;
+        pendingModel = null;
         await applyModel(selected.provider, selected.model, selected.role);
+      } else {
+        await engine.command('orquestador', [id]);
       }
-      if (error) engine.store?.addMessage?.({ from: 'system', text: `${id}: ${error}` });
-      redraw();
+      return;
     }
+    engine.store?.addMessage?.({ from: 'system', text: tr(
+      `La conexión de ${id} requiere autenticación. MORAGENT seguirá activo; completa el acceso en el panel de conexión y luego selecciona ${id} otra vez.`,
+      `Connecting ${id} requires authentication. MORAGENT stays active; finish sign-in in the connection pane, then select ${id} again.`,
+    ) });
+    await engine.command('login', { id });
   }
   async function beginLogin(id) {
     const provider = state().providers?.find((p) => p.id === id);

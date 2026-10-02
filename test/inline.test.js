@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { createStore } from '../src/engine/store.js';
 import { plain } from '../src/core/log.js';
@@ -89,23 +88,22 @@ test('inline /login configures a compatible URL and optional masked key', async 
   await done;
 });
 
-test('inline subscription login runs in the same terminal and refreshes status', async () => {
+test('inline selects ready subscription providers without opening their CLI', async () => {
   const h = harness();
-  const launched = [];
-  h.engine.loginCommand = () => ['claude', 'auth', 'login'];
-  h.engine.refreshProviders = async () => { launched.push('refresh'); };
-  const spawnLogin = (command, args, options) => {
-    launched.push({ command, args, options });
-    const child = new EventEmitter();
-    queueMicrotask(() => child.emit('close', 0));
-    return child;
-  };
-  const done = runInline({ ...h, spawnLogin });
+  h.engine.store.set((state) => ({ providers: [...state.providers, { id: 'pi', label: 'Pi', kind: 'subscription', ready: true }] }));
+  let refreshes = 0;
+  h.engine.refreshProviders = async () => { refreshes++; };
+  const done = runInline(h);
   await h.send('/login claude\r');
-  assert.deepEqual(launched[0].command, 'claude');
-  assert.deepEqual(launched[0].args, ['auth', 'login']);
-  assert.equal(launched[0].options.stdio, 'inherit');
-  assert.equal(launched[1], 'refresh');
+  await h.send('/login pi\r');
+  assert.deepEqual(h.calls.filter((call) => call.name === 'orquestador'), [
+    { name: 'orquestador', args: ['claude'] },
+    { name: 'orquestador', args: ['pi'] },
+  ]);
+  assert.equal(h.calls.some((call) => call.name === 'login'), false);
+  assert.equal(refreshes, 2);
+  await h.send('/help\r');
+  assert.deepEqual(h.calls.at(-1), { name: 'help', args: [] });
   await h.send('/exit\r');
   await done;
 });
@@ -487,23 +485,58 @@ test('inline enables and restores bracketed paste mode only for a TTY', async ()
   assert.equal(h.input.isRaw, false);
 });
 
-test('subscription login hands the terminal to the child without paste mode', async () => {
+test('unready subscription opens a separate connection flow and keeps MORAGENT input active', async () => {
   const h = harness();
   h.input.isTTY = true;
   h.output.isTTY = true;
   h.input.setRawMode = (value) => { h.input.isRaw = value; };
-  h.engine.loginCommand = () => ['claude', 'auth', 'login'];
-  let modeAtSpawn;
-  const spawnLogin = () => {
-    modeAtSpawn = h.shown.match(/\x1b\[\?2004[hl]/g)?.at(-1);
-    const child = new EventEmitter();
-    queueMicrotask(() => child.emit('close', 0));
-    return child;
-  };
-  const done = runInline({ ...h, spawnLogin });
-  await h.send('/login claude\r');
-  assert.equal(modeAtSpawn, '\x1b[?2004l');
+  h.engine.store.set((state) => ({ providers: [...state.providers, { id: 'pi', label: 'Pi', kind: 'subscription', ready: false }] }));
+  h.engine.refreshProviders = async () => {};
+  const done = runInline(h);
+  await h.send('/login pi\r');
+  assert.deepEqual(h.calls.at(-1), { name: 'login', args: { id: 'pi' } });
+  assert.match(h.shown, /MORAGENT stays active/);
+  assert.equal(h.input.isRaw, true);
   assert.equal(h.shown.match(/\x1b\[\?2004[hl]/g)?.at(-1), '\x1b[?2004h');
+  await h.send('/help\r');
+  assert.deepEqual(h.calls.at(-1), { name: 'help', args: [] });
+  await h.send('/exit\r');
+  await done;
+});
+
+test('a pending subscription model is selected after authentication when the provider is chosen again', async () => {
+  const h = harness();
+  h.engine.store.set((state) => ({ providers: [state.providers[0], { id: 'pi', label: 'Pi', kind: 'subscription', ready: false }] }));
+  h.engine.refreshProviders = async () => {};
+  const done = runInline(h);
+  await h.send('/model\r');
+  await h.send('pi');
+  await h.send('\r');
+  assert.deepEqual(h.calls.at(-1), { name: 'login', args: { id: 'pi' } });
+  h.engine.store.set((state) => ({ providers: state.providers.map((provider) => provider.id === 'pi' ? { ...provider, ready: true } : provider) }));
+  await h.send('/login pi\r');
+  assert.deepEqual(h.calls.slice(-2), [
+    { name: 'orquestador', args: ['pi'] },
+    { name: 'modelo', args: ['default'] },
+  ]);
+  await h.send('/exit\r');
+  await done;
+});
+
+test('failed subscription connection leaves MORAGENT commands usable', async () => {
+  const h = harness();
+  h.engine.store.set((state) => ({ providers: [...state.providers, { id: 'pi', label: 'Pi', kind: 'subscription', ready: false }] }));
+  h.engine.refreshProviders = async () => {};
+  const command = h.engine.command;
+  h.engine.command = async (name, args) => {
+    if (name === 'login') throw new Error('connection pane unavailable');
+    return command(name, args);
+  };
+  const done = runInline(h);
+  await h.send('/login pi\r');
+  assert.match(h.shown, /connection pane unavailable/);
+  await h.send('/help\r');
+  assert.deepEqual(h.calls.at(-1), { name: 'help', args: [] });
   await h.send('/exit\r');
   await done;
 });

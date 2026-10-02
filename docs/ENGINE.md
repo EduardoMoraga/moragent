@@ -22,8 +22,9 @@ claude · 1 agent working · /help
 
 - `moragent` (TTY, no args) → inline terminal app with native scrollback. `mora <cmd>` keeps working for scripts/agents.
 - First run in a folder without `.moragent/` → the TUI runs init inline (asks goal, creates project).
-- `/login` → provider picker, same-terminal subscription login, masked API keys, and a configurable
-  OpenAI-compatible endpoint. No MORAGENT account or server.
+- `/login` → provider picker, connected subscriptions switch the orchestrator without leaving the app;
+  authentication uses a separate connection pane when available. API keys are masked, and OpenAI-compatible
+  endpoints are configurable. No MORAGENT account or server.
 - `/idioma <es|en>` (`/language`) changes the interface language without restarting. An initialized
   project persists the choice; for a new project, an explicit choice overrides first-message guessing.
 - The inline `/` menu displays command names in the active language (`/tarea` or `/task`, etc.)
@@ -434,11 +435,13 @@ Rules:
   prints the substitution and does not pass the preferred model to it. A refreshed, ready preferred engine
   and its model are restored after the active turn ends; explicitly selecting another engine replaces the
   preference. Engine/model/role-provider changes during active work are rejected with a wait/cancel hint.
-- **Login**: `/login` lists all engines; CLI authentication temporarily hands the same terminal to the vendor
-  command. API keys use a masked input. `compatible` asks for an HTTP(S) base URL and optional key.
+- **Login**: `/login` lists all engines. Selecting a ready CLI engine switches the orchestrator inside MORAGENT.
+  An unready CLI opens its authentication command in a separate pane when available; the app remains interactive.
+  After authentication, select the engine again. API keys use a masked input. `compatible` asks for an HTTP(S)
+  base URL and optional key.
 - **Paste**: in a TTY, bracketed paste mode keeps a multiline paste as one literal draft (including newlines);
   the next deliberate Enter submits it once. `/task <role> …` and `/plan …` preserve line breaks in their instruction
-  bodies, including pasted CRLF normalized to LF. The mode is disabled while a vendor login owns the terminal and on exit.
+  bodies, including pasted CRLF normalized to LF. The mode is disabled on exit.
 - **Responsiveness**: normal messages and explicit `/task` or `/plan` work do not wait in the terminal input loop;
   later keys and `/cancel` remain usable even when they arrive in the same input chunk as a slow request. A
   cancellation during `/task` or worker preparation must prevent a later worker dispatch or file publication.
