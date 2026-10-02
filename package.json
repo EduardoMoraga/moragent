@@ -1,6 +1,6 @@
 {
   "name": "moragent",
-  "version": "5.3.0-beta.1",
+  "version": "5.3.0-beta.2",
   "description": "A terminal orchestrator for projects with configurable Claude, Codex and Pi agents, layered memory, task trees and remote access.",
   "type": "module",
   "bin": {

@@ -13,9 +13,9 @@ export const LOGO = [
 export function getVersion() {
   try {
     const pkg = JSON.parse(fs.readFileSync(PKG_PATH, 'utf8'));
-    return pkg.version || '5.3.0-beta.1';
+    return pkg.version || '5.3.0-beta.2';
   } catch {
-    return '5.3.0-beta.1';
+    return '5.3.0-beta.2';
   }
 }
 
