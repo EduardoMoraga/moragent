@@ -5,7 +5,10 @@ export const SLASH_COMMANDS = ['/login', '/plan', '/equipo', '/orquestador', '/m
 
 export function decodeKey(buf) {
   const s = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
-  if (s === '\r' || s === '\n') return { name: 'enter' };
+  if (s === '\r') return { name: 'enter' };
+  // Raw-mode Enter is CR. LF can also arrive from Ctrl+J, dictation, or a
+  // terminal that does not support bracketed paste; it must not send a draft.
+  if (s === '\n') return { name: 'newline' };
   if (s === '\u0003') return { name: 'ctrl-c' };
   if (s === '\u0002') return { name: 'ctrl-b' };
   if (s === '\u001b') return { name: 'escape' };
@@ -192,6 +195,7 @@ export class LineEditor {
   handle(key) {
     const k = typeof key === 'string' || Buffer.isBuffer(key) ? decodeKey(key) : key;
     if (k.name === 'text' || k.name === 'paste') this.insert(k.value);
+    else if (k.name === 'newline') this.insert('\n');
     else if (k.name === 'backspace') this.backspace();
     else if (k.name === 'left') this.cursor = previousCharacter(this.line, this.cursor);
     else if (k.name === 'right') this.cursor = nextCharacter(this.line, this.cursor);

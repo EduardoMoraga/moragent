@@ -300,6 +300,43 @@ test('memory: contextPack generates bilingual output, previews body and includes
   assert.ok(packEn.length <= 4000);
 });
 
+test('memory: contextPack protects canonical decisions, deduplicates episodes, and shows provenance within budget', () => {
+  const root = tmp();
+  fs.writeFileSync(path.join(dirs(root).canonical, 'project.md'), `---\nid: project\ntier: canonical\nkind: fact\ntitle: Project\n---\nHola\n`);
+  const decision = 'Use SQLite with WAL for durable local state and never change the storage format without migration.';
+  const canonical = add({ root, tier: 'canonical', title: 'Storage decision', body: decision });
+  const duplicate = add({ root, tier: 'episodic', title: 'Storage repeated in task', body: decision });
+  add({ root, tier: 'episodic', title: 'Task completed', body: 'Finished an unrelated task.' });
+  const pack = contextPack({ root, role: 'backend', budget: 500, lang: 'en' });
+  assert.ok(pack.length <= 500);
+  assert.match(pack, new RegExp(`\\[\\[${canonical.id}\\]\\]`));
+  assert.doesNotMatch(pack, new RegExp(`\\[\\[${duplicate.id}\\]\\]`));
+  assert.match(pack, /Source: \.moragent\/memory\/canonical\/storage-decision\.md · scope: project/);
+  assert.ok(pack.indexOf('## Canonical Memory') < pack.indexOf('## Recent Episodes'));
+  assert.ok(!pack.endsWith('['), 'the budget must not cut an entry mid-reference');
+  assert.equal(fs.readFileSync(path.join(dirs(root).context, 'backend.md'), 'utf8'), pack);
+});
+
+test('memory: contextPack filters session-scoped notes unless the session matches', () => {
+  const root = tmp();
+  const note = add({ root, tier: 'canonical', title: 'Private session finding', body: 'A decision for only this session.' });
+  const raw = fs.readFileSync(note.path, 'utf8').replace('tier: canonical', 'tier: canonical\nscope: session\nsessionId: s1');
+  fs.writeFileSync(note.path, raw);
+  assert.doesNotMatch(contextPack({ root, sessionId: 's2' }), /Private session finding/);
+  assert.match(contextPack({ root, sessionId: 's1', lang: 'en' }), /scope: session/);
+});
+
+test('memory: a tight budget never gives an episode space before an omitted canonical note', () => {
+  const root = tmp();
+  fs.writeFileSync(path.join(dirs(root).canonical, 'project.md'), `---\nid: project\ntier: canonical\nkind: fact\ntitle: Project\n---\nHola\n`);
+  add({ root, tier: 'canonical', title: 'First decision', body: 'Keep local state.' });
+  add({ root, tier: 'canonical', title: 'Important ' + 'architecture '.repeat(22), body: 'Long title cannot fit in a small context.' });
+  add({ root, tier: 'episodic', title: 'Tiny episode', body: 'Done.' });
+  const pack = contextPack({ root, budget: 300, lang: 'en' });
+  assert.ok(pack.length <= 300);
+  assert.doesNotMatch(pack, /Tiny episode/);
+});
+
 test('memory: a captured greeting is not repeated as the project goal', () => {
   const root = tmp();
   fs.writeFileSync(path.join(dirs(root).canonical, 'project.md'), `---\nid: project\ntier: canonical\nkind: fact\ntitle: Project\n---\nHola\n\nCreado con mora init.\n`);

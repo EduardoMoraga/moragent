@@ -58,7 +58,7 @@ export default {
   name: 'init',
   group: 'start',
   summary: { es: 'Convierte esta carpeta en un proyecto agéntico', en: 'Turn this folder into an agentic project' },
-  usage: 'mora init [name] [--preset solo|duo|trio|squad] [--lang es|en] [--goal "…"] [--crew backend=codex,dev=pi] [--no-hooks] [--yes] [--force]',
+  usage: 'mora init [name] [--preset adaptive|solo|duo|trio|squad] [--lang es|en] [--goal "…"] [--crew executor=codex,researcher=pi] [--no-hooks] [--yes] [--force]',
   async run(argv, ctx) {
     const cwd = path.resolve(typeof argv.flags.dir === 'string' ? argv.flags.dir : process.cwd());
     const existing = findRoot(cwd);
@@ -69,7 +69,7 @@ export default {
     let answers = {
       project: argv._[0] || path.basename(cwd),
       lang: typeof argv.flags.lang === 'string' ? argv.flags.lang : (ctx.config?.lang || detectLang()),
-      preset: typeof argv.flags.preset === 'string' ? argv.flags.preset : 'squad',
+      preset: typeof argv.flags.preset === 'string' ? argv.flags.preset : 'adaptive',
       goal: typeof argv.flags.goal === 'string' ? argv.flags.goal : '',
       clis: {},
     };

@@ -13,6 +13,9 @@ const ROLE_PLAIN = {
   frontend: { es: 'pantallas, diseño y textos para el usuario', en: 'screens, design and user-facing text' },
   helper: { es: 'investiga, prueba y revisa el trabajo de otros', en: 'researches, tests and reviews others\' work' },
   dev: { es: 'instalación, scripts y automatización', en: 'install, scripts and automation' },
+  executor: { es: 'produce y verifica entregables', en: 'builds and verifies deliverables' },
+  researcher: { es: 'investiga fuentes y contexto', en: 'researches sources and context' },
+  reviewer: { es: 'revisa evidencia y resultados', en: 'reviews evidence and results' },
 };
 
 const PRESET_PLAIN = {
@@ -20,6 +23,7 @@ const PRESET_PLAIN = {
   duo: { es: 'un coordinador y un ejecutor; una funcionalidad a la vez', en: 'a coordinator and a builder; one feature at a time' },
   trio: { es: 'coordinador + backend + frontend; una app completa', en: 'coordinator + backend + frontend; a full app' },
   squad: { es: 'equipo completo de 5; proyectos grandes o de varias partes', en: 'full crew of 5; large or multi-part projects' },
+  adaptive: { es: 'coordinación, ejecución, investigación y revisión; cualquier proyecto', en: 'coordination, execution, research and review; any project' },
 };
 
 // Interactive `mora init`. Returns answers for init, or null when the user cancels.
@@ -43,10 +47,10 @@ export async function runWizard({ defaults = {}, installed = [], presets = {}, i
     say();
 
     say(c.dim(t('  En una frase, como se lo explicarías a un colega. Puedes dejarlo vacío.', '  One sentence, the way you would tell a colleague. You can leave it empty.')));
-    const goal = await p.ask(t('¿Qué quieres construir?', 'What do you want to build?'), defaults.goal || '');
+    const goal = await p.ask(t('¿Qué quieres lograr?', 'What do you want to accomplish?'), defaults.goal || '');
     say();
 
-    const presetIds = Object.keys(presets).length ? Object.keys(presets) : ['solo', 'duo', 'trio', 'squad'];
+    const presetIds = Object.keys(presets).length ? Object.keys(presets) : ['solo', 'duo', 'trio', 'squad', 'adaptive'];
     say(c.dim(t('  Cada agente es un asistente de IA en su propio panel. Trabajan en paralelo y se pasan tareas.', '  Each agent is an AI assistant in its own pane. They work in parallel and hand tasks to each other.')));
     const preset = await p.select(t('¿Qué tamaño de equipo?', 'How big a crew?'), presetIds.map((id) => ({
       value: id,

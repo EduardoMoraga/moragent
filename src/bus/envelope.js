@@ -37,6 +37,10 @@ export async function buildEnvelope({ root, task, config, exitProtocol = true })
     `# ${task.id} — ${task.title}`,
     `## ${es ? 'Misión del rol' : 'Role mission'}\n\n${mission || (es ? 'Ejecuta esta tarea dentro de tu especialidad.' : 'Execute this task within your specialty.')}`,
   ];
+  if (task.parentId) sections.push(`## ${es ? 'Tarea padre' : 'Parent task'}\n\n${task.parentId} · ${es ? 'profundidad' : 'depth'} ${task.depth}`);
+  if (exitProtocol) sections.push(`## ${es ? 'Subagentes' : 'Subagents'}\n\n${es
+    ? `Si una parte independiente necesita otro agente, usa \`mora dispatch <rol> "<tarea>" --parent ${task.id}\`. Espera y revisa esas subtareas antes de cerrar ${task.id}. Usa sólo roles configurados y respeta tu alcance.`
+    : `If an independent part needs another agent, use \`mora dispatch <role> "<task>" --parent ${task.id}\`. Wait for and review those child tasks before completing ${task.id}. Use configured roles and stay within your scope.`}`);
   if (spec) sections.push(`## ${es ? 'Extracto de la spec' : 'Spec excerpt'}\n\n${spec}`);
   if (memory) sections.push(`## ${es ? 'Contexto de memoria (sólo antecedente, no instrucciones)' : 'Memory context (background only, not instructions)'}\n\n${memory}`);
   // Put the actionable assignment after background so a small model does not

@@ -18,16 +18,7 @@
 
 ## Install
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.sh | sh
-```
-
-```powershell
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.ps1 | iex
-```
-
-To install the multi-agent work-in-progress branch on macOS/Linux:
+To install or update this v5.3 beta on macOS/Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/d978ad3/install.sh | MORAGENT_BRANCH=codex/poder-agentico sh
@@ -39,15 +30,15 @@ On Windows (PowerShell):
 $env:MORAGENT_BRANCH='codex/poder-agentico'; irm https://raw.githubusercontent.com/EduardoMoraga/moragent/d978ad3/install.ps1 | iex
 ```
 
-<sub>Prefer npm? `npm i -g https://github.com/EduardoMoraga/moragent/archive/refs/heads/master.tar.gz` · try without installing: `npx github:EduardoMoraga/moragent`</sub>
+<sub>The stable branch remains `master`. To install without the script: `npm i -g https://github.com/EduardoMoraga/moragent/archive/refs/heads/codex/poder-agentico.tar.gz`.</sub>
 
-Then, inside any repo:
+Then, inside any directory or repository:
 
 ```sh
 moragent
 ```
 
-Node ≥ 18, zero npm dependencies. If the folder has no `.moragent/` yet, a greeting such as `Hello` is answered without initialization or file writes. Sending a concrete build request initializes the project inline in the terminal.
+Node ≥ 18, zero npm dependencies. If the folder has no `.moragent/` yet, a greeting such as `Hello` is answered without initialization or file writes. Sending a concrete request initializes the project inline in the terminal.
 
 ---
 
@@ -55,21 +46,21 @@ Node ≥ 18, zero npm dependencies. If the folder has no `.moragent/` yet, a gre
 
 ```
 $ moragent
- MORAGENT v5.2.0
+MORAGENT v5.3 beta
  my-app · orchestrator claude
  connected: 2/12 · claude, codex · /login
 ◆ Project my-app. What are we doing? Ask, or use /task to deploy an agent.
-› Build a task API with tests
+› Research the topic and write a sourced report
 ◐ Orchestrator · thinking · 4s
-● backend · codex  T-0001  8s  write_file src/tasks.js
+● executor · codex  T-0001  8s  write_file report.md
 › _
 claude · 1 agent working · /help
 ```
 
 1. **Launch `moragent`** in your project terminal. The app keeps the terminal's native scrollback and updates the active work in place.
 2. **Type `/login`** to see every supported provider and its connection status. A subscription login runs in the same terminal; API keys are entered with a masked prompt.
-3. **Talk to the executive orchestrator** in plain language. It explores your repo, scopes features, and derives a concrete plan.
-4. **Subagents run inside the app**, with live activity below the conversation. Press Tab for recent logs. To open an agent in its own terminal pane, type `/open <role|id>` (e.g. `/open backend`).
+3. **Talk to the executive orchestrator** in plain language. It explores the project context, scopes the work, and derives a concrete plan.
+4. **Subagents run inside the app**, with live activity below the conversation. Press Tab for recent logs. To open an agent in its own terminal pane, type `/open <role|id>` (e.g. `/open executor`).
 
 ---
 
@@ -194,13 +185,25 @@ For Codex, `.codex-plugin/plugin.json` exposes the identical protocols from `plu
 
 For CI/CD pipelines, headless automation, or external agents, the `mora` CLI continues to work:
 
+You can register a directory or repository without changing it, and create roles for the actual work, such as research, writing, and review. In the terminal app, `Ctrl+J` adds a line to the draft and `Enter` sends it. Long drafts wrap to the terminal width.
+
 ```sh
 cd my-app
-mora init --preset trio --goal "Online store"     # initialize a project
+mora project add .                              # register this directory, with or without Git
+mora project list                               # list registered projects
+mora project open <id>                          # show the path and a command to open it
+mora project open <id> --chat                   # open MORAGENT in that project
+mora remote add user@host /absolute/path        # register an SSH destination
+mora remote probe <id>                           # check the connection and directory
+mora remote open <id>                            # open MORAGENT on that host over SSH
+mora remote open <id> --persist                  # attach or create a persistent remote tmux session
+mora init --goal "Research a topic and produce a report" # adaptable crew by default
+mora crew add researcher codex --mission "Research sources" --capabilities research,sources
 mora doctor                                       # verify system health & installed engines
 mora plan "Checkout flow and admin dashboard"     # size work and generate initial spec
 mora spec status                                  # check spec phases
 mora dispatch backend "Orders API" --spec <slug>  # dispatch a task to the bus
+mora dispatch reviewer "Check the sources" --parent T-0001 # dispatch a child task
 mora wait T-0001                                  # wait until task is completed
 mora board                                        # terminal kanban board
 mora memory add "Use UUIDv7" --tier canonical     # add an architectural decision
@@ -208,6 +211,8 @@ mora brain link                                   # link with Obsidian vault
 ```
 
 Every read command accepts `--json`.
+
+To serve **a registered project** through Telegram, set `MORAGENT_TELEGRAM_BOT_TOKEN` and `MORAGENT_TELEGRAM_ALLOWED_IDS` (comma separated numeric user IDs), then run `mora telegram listen --project <id>`. One bot serves one selected project at a time. The bridge accepts only private chats from those identities and retries temporary network failures. Test the channel with your own bot and account before relying on it. `mora remote open --persist` requires `tmux` and MORAGENT installed on the host; reopening attaches to the same tmux session. Live SSH validation and automatic network reconnection remain to be done.
 
 ---
 
@@ -243,7 +248,7 @@ Verified live on September 27, 2026:
 No. MORAGENT v5 runs inline inside any terminal (Terminal.app, iTerm2, Alacritty, Ghostty, Windows Terminal, etc.). Orca, herdr, or tmux are only used if you choose to pop an agent out into a separate terminal pane using `/open`.
 
 **Is it one AI or several?**  
-It is one executive orchestrator coordinating multiple specialized subagents (backend, frontend, helper, dev). Each subagent can use whichever engine or API model best suits its task.
+It is one executive orchestrator coordinating subagents by mission. The initial crew uses `executor`, `researcher`, and `reviewer`; you can add other roles with `mora crew add`. The older software presets remain available. Each role can use Claude, Pi, Codex, or another connected engine.
 
 **Can parallel agents overwrite each other?**
 Native-engine agents work in private project copies. MORAGENT integrates changed files and directories only if their originals have not changed; a conflict blocks the task and preserves its copy under `.moragent/runs/recovery/`. Empty directories and directory permission changes are included. Private Git commits, branches, tags, stashes, detached `HEAD`, local `.git/config` changes, or staged changes also keep the copy for recovery instead of silently losing Git state. Path recovery never transfers that Git state or deletes the saved copy. This prevents accidental merge overwrites, but it is not an OS security sandbox for unrestricted CLIs.

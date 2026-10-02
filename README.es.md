@@ -18,16 +18,7 @@
 
 ## Instalación
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.sh | sh
-```
-
-```powershell
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.ps1 | iex
-```
-
-Para instalar la versión de trabajo multiagente en macOS/Linux:
+Para instalar o actualizar esta versión v5.3 beta en macOS/Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/EduardoMoraga/moragent/d978ad3/install.sh | MORAGENT_BRANCH=codex/poder-agentico sh
@@ -39,15 +30,15 @@ En Windows (PowerShell):
 $env:MORAGENT_BRANCH='codex/poder-agentico'; irm https://raw.githubusercontent.com/EduardoMoraga/moragent/d978ad3/install.ps1 | iex
 ```
 
-<sub>¿Prefieres npm? `npm i -g https://github.com/EduardoMoraga/moragent/archive/refs/heads/master.tar.gz` · probar sin instalar: `npx github:EduardoMoraga/moragent`</sub>
+<sub>La rama estable sigue en `master`. Para instalar sin script: `npm i -g https://github.com/EduardoMoraga/moragent/archive/refs/heads/codex/poder-agentico.tar.gz`.</sub>
 
-Luego, dentro de cualquier repositorio:
+Luego, dentro de cualquier directorio o repositorio:
 
 ```sh
 moragent
 ```
 
-Node ≥ 18, cero dependencias npm. Si la carpeta aún no tiene `.moragent/`, un saludo como `Hola` responde sin inicializar ni escribir archivos. Al enviar una petición concreta de construcción, la aplicación inicia el proyecto en línea directamente dentro de la terminal.
+Node ≥ 18, cero dependencias npm. Si la carpeta aún no tiene `.moragent/`, un saludo como `Hola` responde sin inicializar ni escribir archivos. Al enviar una petición concreta, la aplicación inicia el proyecto en línea directamente dentro de la terminal.
 
 ---
 
@@ -55,21 +46,21 @@ Node ≥ 18, cero dependencias npm. Si la carpeta aún no tiene `.moragent/`, un
 
 ```
 $ moragent
- MORAGENT v5.2.0
+ MORAGENT v5.3 beta
  mi-app · orquestador claude
  conectados: 2/12 · claude, codex · /login
 ◆ Proyecto mi-app. ¿Qué hacemos? Pide algo o usa /tarea para desplegar un agente.
-› Crea una API de tareas con tests
+› Investiga el tema y redacta un informe con fuentes
 ◐ Orquestador · pensando · 4s
-● backend · codex  T-0001  8s  write_file src/tasks.js
+● executor · codex  T-0001  8s  write_file informe.md
 › _
 claude · 1 agente trabajando · /help
 ```
 
 1. **Inicias `moragent`** en la terminal de tu proyecto. La app conserva el historial visible de la terminal y actualiza el trabajo activo en el mismo lugar.
 2. **Escribes `/login`** para ver todos los proveedores compatibles y su conexión. El login de una suscripción ocurre en esa misma terminal; las claves de API se escriben en un campo oculto.
-3. **Le hablas al orquestador ejecutivo** en lenguaje natural. Explora tu repositorio, dimensiona el trabajo y elabora el plan de ejecución.
-4. **Los subagentes trabajan por dentro de la aplicación**, con actividad visible debajo de la conversación. Tab muestra los registros recientes. Si quieres abrir un subagente en un panel propio, usa `/abrir <rol|id>` (ej. `/abrir backend`).
+3. **Le hablas al orquestador ejecutivo** en lenguaje natural. Explora el contexto del proyecto, dimensiona el trabajo y elabora el plan de ejecución.
+4. **Los subagentes trabajan por dentro de la aplicación**, con actividad visible debajo de la conversación. Tab muestra los registros recientes. Si quieres abrir un subagente en un panel propio, usa `/abrir <rol|id>` (ej. `/abrir executor`).
 
 ---
 
@@ -194,13 +185,25 @@ Para Codex, `.codex-plugin/plugin.json` expone los mismos protocolos desde `plug
 
 Para canalizaciones de CI/CD, automatización o agentes CLI tradicionales, el comando `mora` sigue funcionando:
 
+También puedes registrar un directorio o repositorio sin modificarlo y crear roles según el trabajo, por ejemplo para investigar, redactar y revisar. En la app de terminal, el borrador admite varias líneas: `Ctrl+J` agrega una línea y `Enter` envía. El texto largo se muestra ajustado al ancho de la terminal.
+
 ```sh
 cd mi-app
-mora init --preset trio --goal "Tienda online"        # inicializa un proyecto
+mora project add .                                # registra este directorio, con o sin Git
+mora project list                                 # muestra proyectos registrados
+mora project open <id>                            # muestra ruta y comando cd para abrirlo
+mora project open <id> --chat                     # abre MORAGENT en ese proyecto
+mora remote add usuario@host /ruta/absoluta       # registra un destino SSH
+mora remote probe <id>                             # comprueba conexión y directorio
+mora remote open <id>                              # abre MORAGENT por SSH en ese host
+mora remote open <id> --persist                    # retoma o crea una sesión tmux remota persistente
+mora init --goal "Investigar un tema y producir un informe" # equipo adaptable por defecto
+mora crew add investigador codex --mission "Investiga fuentes" --capabilities investigar,fuentes
 mora doctor                                          # verifica la salud del sistema y motores
 mora plan "Flujo de checkout y panel de control"     # dimensiona y crea la primera spec
 mora spec status                                     # consulta el estado de las specs
 mora dispatch backend "API de órdenes" --spec <slug> # envía una tarea al bus
+mora dispatch revisor "Revisa las fuentes" --parent T-0001 # crea y envía una subtarea
 mora wait T-0001                                     # espera a que termine la tarea
 mora board                                           # tablero kanban en terminal
 mora memory add "Usar UUIDv7" --tier canonical       # registra una decisión de arquitectura
@@ -208,6 +211,8 @@ mora brain link                                      # enlaza con tu vault de Ob
 ```
 
 Todos los comandos de lectura admiten `--json`.
+
+Para atender **un proyecto registrado** desde Telegram, configura `MORAGENT_TELEGRAM_BOT_TOKEN` y `MORAGENT_TELEGRAM_ALLOWED_IDS` (IDs numéricos separados por comas), y ejecuta `mora telegram listen --project <id>`. Cada bot atiende un proyecto seleccionado a la vez. El puente acepta sólo chats privados de esas identidades y reintenta fallos temporales de red. Este canal requiere un bot y una prueba real con tu cuenta antes de usarlo. `mora remote open --persist` requiere `tmux` y MORAGENT instalados en el host; al volver, se adjunta a la misma sesión. Aún faltan una prueba SSH real y reconexión automática de red.
 
 ---
 
@@ -243,7 +248,7 @@ Verificado en vivo el 27 de septiembre de 2026:
 No. MORAGENT v5 es una aplicación de terminal autónoma que corre en cualquier emulador de terminal (Terminal.app, iTerm2, Alacritty, Ghostty, Windows Terminal, etc.). Orca, herdr o tmux sólo se utilizan si decides sacar un agente a un panel independiente con `/abrir`.
 
 **¿Es una sola IA o varias?**  
-Es un orquestador ejecutivo coordinando a múltiples subagentes especializados (backend, frontend, helper, dev). Cada subagente puede usar el motor de suscripción o la API que mejor se adapte a su tarea.
+Es un orquestador ejecutivo coordinando a subagentes por misión. El equipo inicial usa `executor`, `researcher` y `reviewer`; puedes crear otros roles con `mora crew add`. Los presets anteriores para software siguen disponibles. Cada rol puede usar Claude, Pi, Codex u otro motor conectado.
 
 **¿Pueden pisarse los cambios de agentes paralelos?**
 Los agentes del motor nativo trabajan en copias privadas. MORAGENT incorpora archivos y directorios sólo si los originales no cambiaron; ante un conflicto bloquea la tarea y conserva su copia en `.moragent/runs/recovery/`. También incluye directorios vacíos y cambios de permisos de directorio. Los commits, ramas, etiquetas, stashes, `HEAD` desacoplado, cambios locales en `.git/config` o cambios staged privados conservan la copia para no perder estado Git silenciosamente. Recuperar rutas nunca traslada ese estado Git ni borra la copia guardada. Evita sobrescrituras accidentales al integrar, pero no es una barrera de seguridad del sistema operativo para CLIs sin restricciones.

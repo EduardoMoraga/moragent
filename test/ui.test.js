@@ -81,6 +81,12 @@ test('renderBoard: list layout under 80 columns, empty state hint', () => {
   assert.match(plain(renderBoard([], {}, { columns: 120 })), /No tasks yet/);
 });
 
+test('renderBoard shows a subagent parent in wide and narrow layouts', () => {
+  const tasks = [{ id: 'T-0002', parentId: 'T-0001', role: 'reviewer', title: 'Review sources', status: 'running' }];
+  assert.match(plain(renderBoard(tasks, {}, { columns: 100 })), /↳ T-0001/);
+  assert.match(plain(renderBoard(tasks, {}, { columns: 60 })), /T-0002 @reviewer ↳ T-0001/);
+});
+
 test('prompter: defaults, numbers, labels, yes/no and EOF fallback', async () => {
   const p = createPrompter({ input: feed('\nhello\n2\nEng\nn\nmaybe\ny\n1, 3\n'), output: sink() });
   assert.equal(await p.ask('Name', 'def'), 'def');

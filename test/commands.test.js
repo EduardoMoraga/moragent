@@ -138,6 +138,7 @@ test('welcomeLines renders 2-line logo and header fitting 60 cols', () => {
       { id: 'ollama', ready: true },
     ],
     lang: 'es',
+    crew: { lead: {}, investigador: { cli: 'codex' } },
   };
 
   const lines = welcomeLines(state, { cols: 60 });
@@ -157,7 +158,7 @@ test('welcomeLines renders 2-line logo and header fitting 60 cols', () => {
   // Line 4: connected engines
   assert.ok(plain(lines[3]).includes('conectados: 5/5 · claude, codex, agy, +2 · /login'));
   // Line 5: tips
-  assert.ok(plain(lines[4]).includes('pide algo o /tarea backend … · / comandos · Tab agentes'));
+  assert.ok(plain(lines[4]).includes('pide algo o /tarea investigador … · / comandos'));
 });
 
 test('welcomeLines degrades logo to text under 40 columns', () => {
@@ -190,12 +191,13 @@ test('welcomeLines handles English language correctly', () => {
       { id: 'codex', ready: false },
     ],
     lang: 'en',
+    crew: { lead: {}, researcher: { cli: 'pi' } },
   };
 
   const lines = welcomeLines(state, { cols: 80 });
   assert.ok(plain(lines[2]).includes('my-project · orchestrator claude (sonnet-4)'));
   assert.ok(plain(lines[3]).includes('connected: 1/2 · claude · /login'));
-  assert.ok(plain(lines[4]).includes('ask or /task backend … · / commands · Tab agents'));
+  assert.ok(plain(lines[4]).includes('ask or /task researcher … · / commands · Tab agents'));
 });
 
 test('welcomeLines never throws on empty or missing state and respects narrow widths', () => {

@@ -5,6 +5,14 @@ import { MoragentError } from './errors.js';
 
 export const CLI_IDS = ['claude', 'codex', 'agy', 'pi', 'opencode', 'gemini'];
 
+// Role names become object keys and are used in local run/context paths. Keep them
+// predictable and reject inherited Object keys even when a caller supplies a plain object.
+const ROLE_ID = /^[a-z][a-z0-9_-]{0,39}$/;
+const RESERVED_ROLE_NAMES = new Set(['lead', ...Object.getOwnPropertyNames(Object.prototype)]);
+export const isValidWorkerRole = (name) => typeof name === 'string'
+  && ROLE_ID.test(name)
+  && !RESERVED_ROLE_NAMES.has(name);
+
 // Default missions per role. The lead is the executive: it plans, dispatches, integrates, never
 // disappears into implementation.
 export const ROLES = {
@@ -43,6 +51,27 @@ export const ROLES = {
       en: 'Dev: tooling, scripts, packaging, CI/CD, installers and everything that makes the project install and run.',
     },
   },
+  executor: {
+    title: 'Executor',
+    mission: {
+      es: 'Produce entregables concretos según la solicitud y verifica el resultado.',
+      en: 'Produce concrete deliverables for the request and verify the result.',
+    },
+  },
+  researcher: {
+    title: 'Researcher',
+    mission: {
+      es: 'Investiga fuentes y contexto; comunica hallazgos con procedencia y dudas.',
+      en: 'Research sources and context; report findings with provenance and uncertainties.',
+    },
+  },
+  reviewer: {
+    title: 'Reviewer',
+    mission: {
+      es: 'Revisa el trabajo de otros, comprueba evidencia y detecta problemas concretos.',
+      en: 'Review others’ work, check evidence, and find concrete issues.',
+    },
+  },
 };
 
 export const PRESETS = {
@@ -50,12 +79,13 @@ export const PRESETS = {
   duo: { roles: ['lead', 'backend'], summary: { es: 'Lead + backend — una feature', en: 'Lead + backend — one feature' } },
   trio: { roles: ['lead', 'backend', 'frontend'], summary: { es: 'Lead + backend + frontend — producto full-stack', en: 'Lead + backend + frontend — full-stack product' } },
   squad: { roles: ['lead', 'backend', 'frontend', 'helper', 'dev'], summary: { es: '5 agentes — proyecto completo', en: '5 agents — complete project' } },
+  adaptive: { roles: ['lead', 'executor', 'researcher', 'reviewer'], summary: { es: 'Equipo adaptable para cualquier proyecto', en: 'Adaptable crew for any project' } },
 };
 
 // Default CLI per role; `init` swaps in whatever is actually installed.
-export const DEFAULT_CLI = { lead: 'claude', backend: 'codex', frontend: 'claude', helper: 'agy', dev: 'pi' };
+export const DEFAULT_CLI = { lead: 'claude', backend: 'codex', frontend: 'claude', helper: 'agy', dev: 'pi', executor: 'codex', researcher: 'pi', reviewer: 'claude' };
 
-export function defaultConfig({ project, lang = 'es', preset = 'squad', clis = {} } = {}) {
+export function defaultConfig({ project, lang = 'es', preset = 'adaptive', clis = {} } = {}) {
   if (!PRESETS[preset]) throw new MoragentError('BAD_PRESET', `Unknown preset: ${preset}`, Object.keys(PRESETS).join(' | '));
   const crew = {};
   for (const role of PRESETS[preset].roles) {

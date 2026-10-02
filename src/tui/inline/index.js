@@ -24,6 +24,7 @@ const menuCommands = (lang) => DEFAULT_COMMANDS.map((cmd) => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const safeLine = (value) => terminalText(value, { singleLine: true });
+const isCommandQuery = (value) => /^\/[^\s]*$/.test(value);
 
 function normalizeArgs(args) { return Array.isArray(args) ? args : args?.args || []; }
 function roles(state) {
@@ -66,8 +67,9 @@ export async function runInline({ engine, input = process.stdin, output = proces
   const redraw = () => {
     if (closed) return;
     eraseLive();
-    ui.input = ui.prompt?.kind === 'key' ? '•'.repeat(editor.value.length) : editor.value.replace(/\r\n?|\n/g, ' ↵ ');
-    ui.menu = !ui.prompt && editor.value.startsWith('/') ? { ...(ui.menu || {}), items: filterCommands(editor.value, ui.commands) } : null;
+    ui.input = ui.prompt?.kind === 'key' ? '•'.repeat(editor.value.length) : editor.value;
+    ui.cursor = ui.prompt?.kind === 'key' ? ui.input.length : editor.cursor;
+    ui.menu = !ui.prompt && isCommandQuery(editor.value) ? { ...(ui.menu || {}), items: filterCommands(editor.value, ui.commands) } : null;
     const lines = renderLive(state(), ui, { cols: cols() });
     output.write(lines.join('\n'));
     liveRows = visualRows(lines, cols());
@@ -333,13 +335,13 @@ export async function runInline({ engine, input = process.stdin, output = proces
         if (busy && now - lastCtrlC > 2000) { lastCtrlC = now; await engine.command('cancel'); redraw(); continue; }
         return exit();
       }
-      if (key.name === 'tab' && editor.value.startsWith('/')) {
+      if (key.name === 'tab' && isCommandQuery(editor.value)) {
         const items = filterCommands(editor.value, ui.commands);
         const item = items[ui.menu?.selected || 0] || items[0];
         if (item) editor.setValue(item.name + ' ');
       } else if (key.name === 'tab') ui.showAgents = !ui.showAgents;
-      else if (key.name === 'up' && editor.value.startsWith('/')) ui.menu = { items: filterCommands(editor.value, ui.commands), selected: Math.max(0, (ui.menu?.selected || 0) - 1) };
-      else if (key.name === 'down' && editor.value.startsWith('/')) { const items = filterCommands(editor.value, ui.commands); ui.menu = { items, selected: Math.min(items.length - 1, (ui.menu?.selected || 0) + 1) }; }
+      else if (key.name === 'up' && isCommandQuery(editor.value)) ui.menu = { items: filterCommands(editor.value, ui.commands), selected: Math.max(0, (ui.menu?.selected || 0) - 1) };
+      else if (key.name === 'down' && isCommandQuery(editor.value)) { const items = filterCommands(editor.value, ui.commands); ui.menu = { items, selected: Math.min(items.length - 1, (ui.menu?.selected || 0) + 1) }; }
       else if (key.name === 'escape') { ui.menu = null; editor.setValue(''); }
       else if (key.name === 'enter') {
         // "/orq" + Enter runs the highlighted command, like picking it from the menu.

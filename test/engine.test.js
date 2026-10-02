@@ -287,6 +287,8 @@ test('plan parsing preserves valid plans and rejects malformed dependency graphs
   assert.equal(normalizePlan({ tasks: [{ id: 'a', prompt: 'work', dependsOn: 'b' }] }).error, 'invalid-dependency');
   assert.equal(normalizePlan({ tasks: [{ id: 'constructor', prompt: 'a', dependsOn: ['b'] }, { id: 'b', prompt: 'b', dependsOn: ['constructor'] }] }).error, 'dependency-cycle');
   assert.equal(normalizePlan({ tasks: [{ id: 't1', role: 'unknown', prompt: 'work' }] }, { roles: ['backend'] }).error, 'unknown-role');
+  assert.equal(normalizePlan({ tasks: [{ id: 't1', prompt: 'work' }] }, { roles: ['investigador', 'redactor'] }).error, 'missing-role');
+  assert.equal(normalizePlan({ tasks: [{ id: 't1', prompt: 'work' }] }, { roles: ['redactor'] }).tasks[0].role, 'redactor');
   assert.equal(normalizePlan({ tasks: [{ id: 't1', role: 'backend', provider: 'not-connected', prompt: 'work' }] }, { roles: ['backend'], providers: ['claude', 'codex'] }).error, 'invalid-provider');
   for (const [field, value] of [['prompt', { steps: ['write file'] }], ['title', ['write file']], ['doneWhen', { file: 'done.txt' }], ['role', ['backend']]]) {
     const invalid = normalizePlan({ tasks: [{ id: 't1', role: 'backend', prompt: 'work', [field]: value }] });
@@ -575,6 +577,7 @@ test('a later check cannot allow an earlier task to publish wrong user-requested
     assert.equal(fs.existsSync(path.join(root, 'exact.txt')), false, 'wrong bytes must never reach the project');
     assert.equal(listTasks(root)[0].status, 'blocked');
     assert.equal(listTasks(root)[1].status, 'blocked');
+    assert.deepEqual(listTasks(root)[1].dependencies, [listTasks(root)[0].id], 'plan dependency uses durable bus IDs');
     const recovery = listRecoveries(root)[0];
     assert.equal(inspectRecovery(root, recovery.id).manualOnlyReason, 'acceptance-check-failed');
     assert.equal(inspectRecovery(root, recovery.id).canApply, false);
@@ -1286,7 +1289,7 @@ test('an API-only first run creates, delegates and reopens with the same orchest
     status: async () => ({ ready: true }),
     run: async ({ root }) => {
       turns++;
-      if (turns === 1) return { ok: true, text: '```moragent-plan\n{"tasks":[{"id":"t1","role":"backend","prompt":"Create api-only.txt"}]}\n```' };
+      if (turns === 1) return { ok: true, text: '```moragent-plan\n{"tasks":[{"id":"t1","role":"executor","prompt":"Create api-only.txt"}]}\n```' };
       if (turns === 2) {
         fs.writeFileSync(path.join(root, 'api-only.txt'), 'api-only\n');
         return { ok: true, text: 'Created api-only.txt.' };

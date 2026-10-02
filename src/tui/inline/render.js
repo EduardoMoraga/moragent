@@ -1,6 +1,7 @@
 import { c, plain } from '../../core/log.js';
 import { renderMarkdown } from '../markdown.js';
 import { terminalText } from '../terminal-text.js';
+import { cellWidth, clipCells, graphemes } from '../cell-width.js';
 
 const safeLine = (value) => terminalText(value, { singleLine: true });
 
@@ -22,7 +23,7 @@ export const DEFAULT_COMMANDS = [
   { name: '/salir', aliases: ['/exit'], es: 'salir', en: 'quit' },
 ];
 
-const width = (s) => plain(s).length;
+const width = (s) => cellWidth(plain(s));
 const lang = (state) => state?.lang === 'en' ? 'en' : 'es';
 const tr = (state, es, en) => lang(state) === 'en' ? en : es;
 
@@ -33,8 +34,8 @@ export function visualRows(lines, cols) {
 // Fit a line to exactly `cols` visible columns: cut with an ellipsis, or pad so box borders line up.
 function clip(s, cols) {
   const p = plain(s);
-  if (p.length > cols) return p.slice(0, Math.max(0, cols - 1)) + '…';
-  return s + ' '.repeat(Math.max(0, cols - p.length));
+  if (width(s) > cols) return clipCells(p, cols);
+  return s + ' '.repeat(Math.max(0, cols - width(s)));
 }
 
 function statusGlyph(status) {
@@ -62,6 +63,26 @@ function wrapText(text, cols) {
   return out.length ? out : [''];
 }
 
+function draftLines(value, cursor, cols, prefix = '› ') {
+  const draft = String(value ?? '');
+  const at = Math.max(0, Math.min(draft.length, cursor ?? draft.length));
+  const marked = `${terminalText(draft.slice(0, at))}_${terminalText(draft.slice(at))}`;
+  const limit = Math.max(1, cols - width(prefix));
+  const lines = [];
+  for (const logical of marked.split('\n')) {
+    let part = '';
+    for (const char of graphemes(logical)) {
+      if (width(part + char) > limit && part) {
+        lines.push(`${lines.length ? ' '.repeat(width(prefix)) : prefix}${part}`);
+        part = '';
+      }
+      part += char;
+    }
+    lines.push(`${lines.length ? ' '.repeat(width(prefix)) : prefix}${part}`);
+  }
+  return lines;
+}
+
 export function renderFinal(message, { cols = 80, lang = 'es' } = {}) {
   const body = terminalText(message.text || '');
   if (!body.trim()) return [];
@@ -75,10 +96,10 @@ export function renderFinal(message, { cols = 80, lang = 'es' } = {}) {
 }
 
 function logo(cols) {
-  if (cols < 40) return [c.brand('MORAGENT v5.2')];
+  if (cols < 40) return [c.brand('MORAGENT v5.3 beta')];
   return [
     c.brand('█▀▄▀█ █▀█ █▀█ ▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀'),
-    c.brand('█ ▀ █ █▄█ █▀▄ █▀█ █▄█ ██▄ █ ▀█  █   v5.2'),
+    c.brand('█ ▀ █ █▄█ █▀▄ █▀█ █▄█ ██▄ █ ▀█  █   v5.3 beta'),
   ].map((l) => clip(l, Math.min(cols, 60)));
 }
 
@@ -157,11 +178,11 @@ export function filterCommands(query, commands = DEFAULT_COMMANDS) {
 
 function renderMenu(ui, state, cols) {
   const matches = ui.menu?.items || filterCommands(ui.input || '/', ui.commands || DEFAULT_COMMANDS);
-  if (!ui.menu && !(ui.input || '').startsWith('/')) return [];
+  if (!ui.menu && !/^\/[^\s]*$/.test(ui.input || '')) return [];
   const selected = Math.min(ui.menu?.selected || 0, Math.max(0, matches.length - 1));
   const w = Math.min(cols, Math.max(28, Math.min(64, cols - 2)));
   const lines = ['╭' + '─'.repeat(w - 2) + '╮'];
-  lines.push('│ ' + clip(`> ${safeLine(ui.input || '')}_`, w - 4) + ' │');
+  lines.push(...draftLines(ui.input || '', ui.cursor, w - 4, '> ').map((line) => '│ ' + clip(line, w - 4) + ' │'));
   const start = Math.max(0, Math.min(selected - 3, matches.length - 8));
   if (start > 0) lines.push('│ ' + clip(c.gray(`  ↑ ${start} ${tr(state, 'más', 'more')}`), w - 4) + ' │');
   for (let i = start; i < Math.min(matches.length, start + 8); i++) {
@@ -234,8 +255,11 @@ export function renderLive(state = {}, ui = {}, { cols = 80 } = {}) {
   }
   out.push(...renderPicker(ui, state, w));
   out.push(...renderMenu(ui, state, w));
-  if (ui.prompt) out.push(c.brand(clip(safeLine(ui.prompt.title), w)), `› ${safeLine(ui.input || '')}_`);
-  else if (!ui.picker && !(ui.menu || (ui.input || '').startsWith('/'))) out.push(c.brand('› ') + safeLine(ui.input || '') + '_');
+  if (ui.prompt) out.push(c.brand(clip(safeLine(ui.prompt.title), w)), ...draftLines(ui.input || '', ui.cursor, w));
+  else if (!ui.picker && !(ui.menu || /^\/[^\s]*$/.test(ui.input || ''))) {
+    out.push(...draftLines(ui.input || '', ui.cursor, w));
+    out.push(c.gray(clip(tr(state, 'Enter enviar · Ctrl+J nueva línea', 'Enter send · Ctrl+J new line'), w)));
+  }
   out.push(statusLine(state, ui, w));
   return out.flatMap((l) => width(l) <= w ? [l] : wrapText(l, w));
 }

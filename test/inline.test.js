@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { createStore } from '../src/engine/store.js';
+import { plain } from '../src/core/log.js';
 import { runInline } from '../src/tui/inline/index.js';
 import { renderLive, renderFinal } from '../src/tui/inline/render.js';
 import { decodeKeys, TerminalKeyDecoder } from '../src/tui/input.js';
@@ -432,6 +433,32 @@ test('inline multiline paste stays one draft until Enter submits it', async () =
   assert.deepEqual(h.calls, [{ name: 'send', text: 'first line\nsecond line' }]);
   await h.send('/exit\r');
   await done;
+});
+
+test('plain LF and Ctrl+J keep a multiline draft until CR submits it', async () => {
+  const h = harness();
+  const done = runInline(h);
+  await h.send('first line\nsecond line');
+  assert.deepEqual(h.calls, []);
+  assert.match(h.shown, /first line/);
+  assert.match(h.shown, /second line/);
+  await h.send('\nthird line');
+  assert.deepEqual(h.calls, []);
+  await h.send('\r');
+  assert.deepEqual(h.calls, [{ name: 'send', text: 'first line\nsecond line\nthird line' }]);
+  await h.send('/exit\r');
+  await done;
+});
+
+test('a long slash-command prompt remains visible after its arguments start', () => {
+  const input = '/task backend ' + 'explain the repository and all the required changes '.repeat(4);
+  const rendered = renderLive({ lang: 'en' }, { input, cursor: input.length }, { cols: 36 });
+  const text = rendered.join('\n');
+  assert.doesNotMatch(text, /deploy one agent directly/);
+  assert.match(text, /required changes/);
+  assert.match(text, /Enter send · Ctrl\+J new line/);
+  assert.ok(rendered.length > 5, 'the prompt wraps into visible rows');
+  assert.ok(rendered.every((line) => plain(line).length <= 36));
 });
 
 test('inline /task and /plan preserve line breaks in pasted instructions', async () => {

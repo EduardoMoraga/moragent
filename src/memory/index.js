@@ -7,7 +7,7 @@ import { MoragentError } from '../core/errors.js';
 import { flagList } from '../core/args.js';
 import { t, setLang, getLang } from '../core/i18n.js';
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter.js';
-import { bm25Search } from './search.js';
+import { bm25Search, normalizeText } from './search.js';
 import { isGreeting } from '../core/greeting.js';
 
 export const TIERS = ['canonical', 'episodic', 'transient'];
@@ -299,7 +299,19 @@ export function gc({ root, days, dryRun = false } = {}) {
   return { removed, count: removed.length, dryRun: !!dryRun };
 }
 
-export function contextPack({ root, role = 'agent', query = '', budget = 6000, includeSpecs = true, lang } = {}) {
+function contextIdentity(note) {
+  const body = normalizeText((note.body || '').replace(/^Links:\s*\[\[.*$/gm, '')).replace(/\s+/g, ' ').trim();
+  const title = normalizeText(note.title || '').replace(/\s+/g, ' ').trim();
+  return body.length >= 24 ? `body:${body}` : `short:${title}|${body}`;
+}
+
+function contextSource(root, note, currentLang) {
+  const source = note.source || (note.path ? path.relative(root, note.path).replaceAll(path.sep, '/') : note.id);
+  const scope = ['global', 'project', 'session'].includes(note.scope) ? note.scope : 'project';
+  return currentLang === 'en' ? `Source: ${source} · scope: ${scope}` : `Fuente: ${source} · alcance: ${scope}`;
+}
+
+export function contextPack({ root, role = 'agent', query = '', budget = 6000, includeSpecs = true, lang, sessionId } = {}) {
   const r = root || requireRoot();
   let cfg = null;
   try { cfg = loadConfig(r); } catch { /* default config */ }
@@ -307,76 +319,84 @@ export function contextPack({ root, role = 'agent', query = '', budget = 6000, i
   const currentLang = lang || cfg?.lang || getLang();
   setLang(currentLang);
 
+  const maxChars = Number.isFinite(Number(budget)) && Number(budget) > 0 ? Math.floor(Number(budget)) : 6000;
   const episodicLimit = cfg?.memory?.episodicInContext ?? 8;
+  const inScope = (note) => note.scope !== 'session' || (sessionId && note.sessionId === sessionId);
   const canonicalNotes = list({ root: r, tier: 'canonical' }).filter((note) => {
+    if (!inScope(note)) return false;
     if (note.id !== 'project') return true;
     // `mora init` appends provenance after the goal; judge only the goal paragraph.
     return !isGreeting((note.body || '').split(/\n\s*\n/, 1)[0]);
   });
-  const episodicNotes = list({ root: r, tier: 'episodic', limit: episodicLimit });
+  const relevance = new Map(bm25Search(canonicalNotes, query, { limit: canonicalNotes.length }).map((hit) => [hit.note.path, hit.score]));
+  canonicalNotes.sort((a, b) => (relevance.get(b.path) || 0) - (relevance.get(a.path) || 0)
+    || Number(b.id === 'project') - Number(a.id === 'project')
+    || String(b.created || '').localeCompare(String(a.created || '')) || a.id.localeCompare(b.id));
+  const episodicNotes = list({ root: r, tier: 'episodic' }).filter(inScope);
+  const seen = new Set();
+  let pack = '';
+  const append = (block) => {
+    const next = `${pack ? '\n' : ''}${block}`;
+    if (pack.length + next.length > maxChars) return false;
+    pack += next;
+    return true;
+  };
+  const addNote = (note, block) => {
+    const identity = contextIdentity(note);
+    if (seen.has(identity)) return false;
+    if (!append(block)) return false;
+    seen.add(identity);
+    return true;
+  };
 
-  const handledIds = new Set();
-  const lines = [
-    t(`# Paquete de contexto: ${role}`, `# Context Pack: ${role}`),
-    t(`Generado: ${nowISO()}`, `Generated: ${nowISO()}`),
-    '',
-  ];
-
-  // 1) Canonical notes (full notes)
-  lines.push(t('## Memoria canónica (decisiones y arquitectura)', '## Canonical Memory (Decisions & Architecture)'));
-  if (canonicalNotes.length === 0) {
-    lines.push(t('_Aún no hay decisiones canónicas registradas._', '_No canonical decisions recorded yet._'));
-  } else {
-    for (const note of canonicalNotes) {
-      handledIds.add(note.id);
-      lines.push(`### [[${note.id}]] ${note.title} (${note.kind})`);
-      if (note.tags?.length) lines.push(t(`Etiquetas: ${note.tags.join(', ')}`, `Tags: ${note.tags.join(', ')}`));
-      lines.push('');
-      lines.push(note.body ? note.body.trim() : t('_Sin contenido._', '_No content._'));
-      lines.push('');
-    }
+  const heading = t(`# Paquete de contexto: ${role}`, `# Context Pack: ${role}`);
+  if (!append(heading)) pack = heading.slice(0, maxChars);
+  append(t(`Generado: ${nowISO()}`, `Generated: ${nowISO()}`));
+  append(t('## Memoria canónica (decisiones y arquitectura)', '## Canonical Memory (Decisions & Architecture)'));
+  if (!canonicalNotes.length) append(t('_Aún no hay decisiones canónicas registradas._', '_No canonical decisions recorded yet._'));
+  let canonicalOmitted = false;
+  for (let i = 0; i < canonicalNotes.length; i++) {
+    const note = canonicalNotes[i];
+    if (seen.has(contextIdentity(note))) continue;
+    const header = `### [[${note.id}]] ${note.title} (${note.kind})\n${contextSource(r, note, currentLang)}`;
+    const tags = note.tags?.length ? `\n${t('Etiquetas', 'Tags')}: ${note.tags.join(', ')}` : '';
+    const base = header + tags;
+    const body = (note.body || '').trim() || t('_Sin contenido._', '_No content._');
+    const remainingNotes = canonicalNotes.length - i - 1;
+    const remaining = maxChars - pack.length - 1;
+    const bodyCap = Math.min(900, Math.max(0, remaining - base.length - remainingNotes * 100 - 2));
+    const preview = body.length <= bodyCap ? body : bodyCap > 3 ? `${body.slice(0, bodyCap - 1)}…` : '';
+    if (!addNote(note, `${base}${preview ? `\n${preview}` : ''}`)) canonicalOmitted = true;
   }
-  lines.push('');
 
-  // 2) Recent episodic notes (summary with first body line preview <= 160 chars)
-  lines.push(t(`## Episodios recientes (últimos ${episodicLimit})`, `## Recent Episodes (Last ${episodicLimit})`));
-  if (episodicNotes.length === 0) {
-    lines.push(t('_Sin episodios recientes._', '_No recent episodes._'));
-  } else {
+  const episodeHeading = t(`## Episodios recientes (últimos ${episodicLimit})`, `## Recent Episodes (Last ${episodicLimit})`);
+  if (!canonicalOmitted && append(episodeHeading)) {
+    let episodesAdded = 0;
     for (const note of episodicNotes) {
-      handledIds.add(note.id);
+      if (episodesAdded >= episodicLimit) break;
       const cleanBody = (note.body || '').replace(/^Links:\s*\[\[.*$/m, '').trim();
       const firstLine = cleanBody ? cleanBody.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || '' : '';
       const summary = firstLine ? ` — ${firstLine.slice(0, 160)}` : '';
       const dateStr = note.created ? note.created.slice(0, 10) : today();
-      lines.push(`- **${dateStr}** \`[[${note.id}]]\` ${note.title} (@${note.by || 'user'})${summary}`);
+      const entry = `- **${dateStr}** \`[[${note.id}]]\` ${note.title} (@${note.by || 'user'})${summary}\n  ${contextSource(r, note, currentLang)}`;
+      if (addNote(note, entry)) episodesAdded++;
     }
+    if (!episodesAdded) append(t('_Sin episodios recientes._', '_No recent episodes._'));
   }
-  lines.push('');
 
-  // 3) Recall query matches (including specs by default)
-  if (query && String(query).trim()) {
-    const hits = recall({ root: r, query, limit: 6, includeSpecs });
-    const relevantHits = hits.filter((h) => !handledIds.has(h.note.id));
-    if (relevantHits.length > 0) {
-      lines.push(t(`## Contexto relevante para la consulta: "${query}"`, `## Relevant Context for Query: "${query}"`));
-      for (const hit of relevantHits) {
-        lines.push(`- **[[${hit.note.id}]]** ${hit.note.title} (${hit.note.tier}, score: ${hit.score})`);
-        if (hit.snippet) lines.push(`  > ${hit.snippet}`);
+  if (!canonicalOmitted && query && String(query).trim()) {
+    const hits = recall({ root: r, query, limit: 20, includeSpecs });
+    const relevantHeading = t(`## Contexto relevante para la consulta: "${query}"`, `## Relevant Context for Query: "${query}"`);
+    for (const hit of hits) {
+      if (hit.note.tier === 'canonical' || !inScope(hit.note) || seen.has(contextIdentity(hit.note))) continue;
+      const source = contextSource(r, hit.note, currentLang);
+      const entry = `- **[[${hit.note.id}]]** ${hit.note.title} (${hit.note.tier}, score: ${hit.score})\n  ${source}${hit.snippet ? `\n  > ${hit.snippet}` : ''}`;
+      if (!pack.includes(relevantHeading)) {
+        if (pack.length + relevantHeading.length + entry.length + 2 > maxChars) continue;
+        append(relevantHeading);
       }
-      lines.push('');
+      addNote(hit.note, entry);
     }
-  }
-
-  let pack = lines.join('\n');
-
-  // Enforce budget
-  if (budget && pack.length > budget) {
-    const notice = t(
-      `\n\n... [truncado para respetar presupuesto de ${budget} caracteres]`,
-      `\n\n... [truncated to fit ${budget} character budget]`
-    );
-    pack = pack.slice(0, Math.max(0, budget - notice.length)) + notice;
   }
 
   // Save compiled context to .moragent/context/<role>.md

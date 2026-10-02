@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { PassThrough } from 'node:stream';
 import { render } from '../src/tui/render.js';
+import { runTui } from '../src/tui/app.js';
 import { plain } from '../src/core/log.js';
 import { LineEditor, decodeKey, decodeKeys } from '../src/tui/input.js';
 import { LoginOverlay } from '../src/tui/login.js';
@@ -26,6 +28,56 @@ test('render 140x40 fits with sidebar and wraps long messages', () => {
   assert.ok(lines[0].includes('┬'));
   assert.ok(lines.some((l) => l.includes('┴')));
   assert.ok(lines.filter((l) => plain(l).includes('mensaje-largo')).length > 1);
+});
+
+test('full-screen draft grows and scrolls around the cursor', () => {
+  const input = Array.from({ length: 30 }, (_, i) => `line-${i}`).join('\n');
+  const cursor = input.indexOf('line-15') + 'line-15'.length;
+  const lines = render(sampleState(), { cols: 80, rows: 16, input, inputCursor: cursor });
+  const visible = plain(lines.join('\n'));
+  assert.equal(lines.length, 16);
+  assert.ok(lines.every((line) => plain(line).length <= 80));
+  assert.match(visible, /line-15_/);
+  assert.match(visible, /↑\d+/);
+  assert.match(visible, /↓\d+/);
+  assert.match(visible, /Enter enviar · Ctrl\+J nueva línea/);
+  const short = plain(render(sampleState(), { cols: 80, rows: 16, input: 'one\ntwo\nthree' }).join('\n'));
+  assert.match(short, /one/);
+  assert.match(short, /two/);
+  assert.match(short, /three_/);
+});
+
+test('full-screen input keeps LF and split bracketed paste until Enter', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  input.isTTY = true;
+  output.isTTY = true;
+  output.columns = 80;
+  output.rows = 24;
+  input.setRawMode = (value) => { input.isRaw = value; };
+  let outputText = '';
+  output.on('data', (chunk) => { outputText += chunk.toString(); });
+  const engine = new FakeEngine();
+  const done = runTui({ engine, input, output });
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 50));
+  input.write('first\nsecond');
+  await pause();
+  assert.equal(engine.store.state.messages.length, 1);
+  input.write('\x1b[20');
+  input.write('0~\nthird\x1b[201~');
+  await pause();
+  assert.equal(engine.store.state.messages.length, 1);
+  input.write('\r');
+  await pause();
+  assert.equal(engine.store.state.messages.at(-1).text, 'first\nsecond\nthird');
+  input.write('/exit');
+  await pause();
+  assert.equal(input.isRaw, true, 'typing /exit alone must not exit');
+  input.write('\r');
+  await done;
+  assert.equal(input.isRaw, false);
+  assert.match(outputText, /\x1b\[\?2004h/);
+  assert.match(outputText, /\x1b\[\?2004l/);
 });
 
 test('render uses state.lang labels and avoids duplicate orchestrator glyph', () => {

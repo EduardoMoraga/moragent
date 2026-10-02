@@ -1,17 +1,38 @@
 import { c, plain } from '../core/log.js';
 import { renderMarkdown } from './markdown.js';
+import { terminalText } from './terminal-text.js';
+import { cellWidth, clipCells, graphemes } from './cell-width.js';
 
 const COMMANDS = ['/login', '/plan', '/equipo', '/memoria', '/abrir', '/agentes', '/sesiones', '/help'];
 
 function tr(state, es, en) { return state?.lang === 'en' ? en : es; }
 export function stripAnsi(s) { return plain(s); }
-const width = (s) => plain(s).length;
-function clip(s, n) { if (n <= 0) return ''; const p = plain(s); return p.length <= n ? s + ' '.repeat(n - p.length) : p.slice(0, Math.max(0, n - 1)) + '…'; }
+const width = (s) => cellWidth(plain(s));
+function clip(s, n) { if (n <= 0) return ''; const p = plain(s); return width(s) <= n ? s + ' '.repeat(n - width(s)) : clipCells(p, n); }
 const pad = clip;
 function border(w, title = '') { const label = title ? ` ${title} ` : ''; return `┌${label}${'─'.repeat(Math.max(0, w - 2 - width(label)))}┐`; }
 function mid(w, title = '') { const label = title ? ` ${title} ` : ''; return `├${label}${'─'.repeat(Math.max(0, w - 2 - width(label)))}┤`; }
 function bottom(w) { return `└${'─'.repeat(Math.max(0, w - 2))}┘`; }
 function row(content, w) { return `│${pad(content, Math.max(0, w - 2))}│`; }
+
+function draftRows(input, cursor, w) {
+  const value = String(input ?? '');
+  const at = Math.max(0, Math.min(value.length, cursor ?? value.length));
+  const marker = '\ufff0';
+  const marked = terminalText(value.slice(0, at)) + marker + terminalText(value.slice(at));
+  const limit = Math.max(1, w - 4);
+  const lines = [];
+  for (const logical of marked.split('\n')) {
+    let part = '';
+    for (const char of graphemes(logical)) {
+      if (width(part + char) > limit && part) { lines.push(part); part = ''; }
+      part += char;
+    }
+    lines.push(part);
+  }
+  const cursorRow = Math.max(0, lines.findIndex((line) => line.includes(marker)));
+  return { lines: lines.map((line, i) => `${i ? '  ' : '› '}${line.replace(marker, '_')}`), cursorRow };
+}
 
 function statusGlyph(status) {
   if (status === 'done' || status === 'ready' || status === true) return c.green('✓');
@@ -177,11 +198,16 @@ function renderSessionsOverlay(state, cols, rows, overlay = {}) {
   return overlayBox(cols, rows, box);
 }
 
-export function render(state = {}, { cols = 80, rows = 24, input = '', scroll = 0, overlay = null, sidebar = true, newCount = 0 } = {}) {
+export function render(state = {}, { cols = 80, rows = 24, input = '', inputCursor, scroll = 0, overlay = null, sidebar = true, newCount = 0 } = {}) {
   cols = Math.max(40, cols | 0); rows = Math.max(10, rows | 0);
   const title = `MORAGENT · ${state.project || 'project'}`;
   const showSide = sidebar && cols >= 100;
-  const inputH = 3, mainH = rows - inputH;
+  const draft = draftRows(input, inputCursor, cols);
+  const maxDraftRows = Math.max(1, Math.min(rows - 8, Math.floor(rows * 0.55)));
+  const draftStart = Math.max(0, Math.min(draft.cursorRow - Math.floor(maxDraftRows / 2), draft.lines.length - maxDraftRows));
+  const visibleDraft = draft.lines.slice(draftStart, draftStart + maxDraftRows);
+  const showCommands = draft.lines.length <= 2;
+  const inputH = visibleDraft.length + (showCommands ? 4 : 3), mainH = rows - inputH;
   let out = [];
   if (showSide) {
     const sideW = Math.min(38, Math.max(30, Math.floor(cols * 0.32))), chatW = cols - sideW;
@@ -200,8 +226,13 @@ export function render(state = {}, { cols = 80, rows = 24, input = '', scroll = 
     for (const l of visible) out.push(row(l, cols)); out.push(bottom(cols));
   }
   out.push(`├${'─'.repeat(cols - 2)}┤`);
-  const hint = newCount > 0 ? c.yellow(`↓ ${newCount} ${tr(state, 'nuevos · End', 'new · End')}`) : c.gray(COMMANDS.join(' '));
-  out.push(row(`› ${input}_ ${hint}`, cols)); out.push(bottom(cols));
+  for (const line of visibleDraft) out.push(row(line, cols));
+  if (showCommands) out.push(row(c.gray(COMMANDS.join(' ')), cols));
+  const hiddenAbove = draftStart;
+  const hiddenBelow = draft.lines.length - draftStart - visibleDraft.length;
+  const draftHint = `${tr(state, 'Enter enviar · Ctrl+J nueva línea', 'Enter send · Ctrl+J new line')}${hiddenAbove ? ` · ↑${hiddenAbove}` : ''}${hiddenBelow ? ` · ↓${hiddenBelow}` : ''}`;
+  const hint = newCount > 0 ? `${tr(state, `↓ ${newCount} nuevos · End`, `↓ ${newCount} new · End`)} · ${draftHint}` : draftHint;
+  out.push(row(c.gray(hint), cols)); out.push(bottom(cols));
   out = out.slice(0, rows); while (out.length < rows) out.push(' '.repeat(cols)); out = out.map((l) => clip(l, cols));
   if (overlay?.type === 'login') return renderLogin(state, cols, rows, overlay);
   if (overlay?.type === 'agents') return renderAgentsOverlay(state, cols, rows, overlay);

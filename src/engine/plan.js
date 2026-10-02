@@ -87,7 +87,7 @@ export function normalizePlan(raw, { roles = null, providers = null } = {}) {
     const id = String(t.id || `t${i + 1}`);
     return {
       id,
-      role: String(t.role || 'backend').toLowerCase(),
+      role: t.role ? t.role.toLowerCase() : null,
       provider: t.provider ? String(t.provider) : null,
       title: String(t.title || t.prompt || `Tarea ${i + 1}`).slice(0, 120),
       prompt: String(t.prompt || t.title || ''),
@@ -97,6 +97,10 @@ export function normalizePlan(raw, { roles = null, providers = null } = {}) {
     };
   });
   for (const task of tasks) {
+    if (!task.role && roles) {
+      if (roles.length === 1) task.role = roles[0];
+      else return { error: 'missing-role', detail: task.id };
+    }
     if (!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(task.id)) return { error: 'invalid-id', detail: task.id };
     if (ids.has(task.id)) return { error: 'duplicate-id', detail: task.id };
     ids.add(task.id);

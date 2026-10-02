@@ -5,7 +5,7 @@ import { exists, nowISO, slugify } from '../core/fsx.js';
 import { MoragentError } from '../core/errors.js';
 import { t } from '../core/i18n.js';
 import { json, ok, info } from '../core/log.js';
-import { createTask, nextId, updateTask } from '../bus/tasks.js';
+import { createChildTask, createTask, nextId, updateTask } from '../bus/tasks.js';
 import { writeEnvelope } from '../bus/envelope.js';
 import { parseDuration, waitForTasks } from '../bus/wait.js';
 import { getAdapter } from '../crew/adapters.js';
@@ -33,15 +33,17 @@ export default {
   aliases: ['d'],
   group: 'crew',
   summary: { es: 'Crea y envía una tarea a un rol', en: 'Create and send a task to a role' },
-  usage: 'mora dispatch <role> "<tarea>" [--spec slug] [--title "…"] [--headless] [--wait] [--dry-run] [--json]',
+  usage: 'mora dispatch <role> "<tarea>" [--parent T-XXXX] [--spec slug] [--title "…"] [--headless] [--wait] [--dry-run] [--json]',
   async run(argv, ctx) {
     const root = ctx.root || requireRoot();
     const cfg = ctx.config || loadConfig(root);
     const [role, ...words] = argv._;
     const body = words.join(' ').trim();
     if (!role || !body) throw new MoragentError('USAGE', this.usage);
-    const member = cfg.crew?.[role];
+    const member = Object.hasOwn(cfg.crew || {}, role) ? cfg.crew[role] : null;
     if (!member) throw new MoragentError('UNKNOWN_ROLE', t(`Rol desconocido: ${role}`, `Unknown role: ${role}`));
+    const parentId = typeof argv.flags.parent === 'string' ? argv.flags.parent : null;
+    if (argv.flags.parent && !parentId) throw new MoragentError('USAGE', this.usage);
     const requestedSpec = typeof argv.flags.spec === 'string' ? slugify(argv.flags.spec) : null;
     if (requestedSpec && !exists(path.join(dirs(root).specs, requestedSpec))) throw new MoragentError(
       'SPEC_NOT_FOUND',
@@ -70,20 +72,21 @@ export default {
       mux = getMux('headless');
     }
     if (argv.flags['dry-run']) {
-      const preview = { id: nextId(root), role, cli: member.cli, mux: mux.name, body, spec: requestedSpec };
+      const preview = { id: nextId(root), role, cli: member.cli, mux: mux.name, body, spec: requestedSpec, parentId };
       if (ctx.json) json({ ok: true, dryRun: true, task: preview });
       else info(t(`Simulación: ${preview.id} se enviaría a ${role} vía ${mux.name}.`, `Dry run: ${preview.id} would be sent to ${role} via ${mux.name}.`));
       return 0;
     }
     if (pane) assertPaneReady(mux, pane, role);
-    let task = createTask({
+    const taskInput = {
       root,
       title: typeof argv.flags.title === 'string' ? argv.flags.title : undefined,
       role,
       body,
-      spec: requestedSpec,
-      by: 'lead',
-    });
+      spec: requestedSpec || undefined,
+      by: process.env.MORAGENT_ROLE || 'lead',
+    };
+    let task = parentId ? createChildTask({ ...taskInput, parentId }) : createTask({ ...taskInput, spec: requestedSpec });
     const envelope = await writeEnvelope({ root, task, config: cfg });
     const prompt = cfg.lang === 'en'
       ? `Read and execute .moragent/tasks/${task.id}.md`

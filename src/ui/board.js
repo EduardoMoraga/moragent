@@ -53,7 +53,8 @@ export function groupTasks(tasks) {
 function card(task, w) {
   const mark = task.status === 'failed' ? c.red('✗ ') : '';
   const role = clip('@' + (task.role || '?'), Math.max(1, w - [...String(task.id)].length - 3));
-  return [`${mark}${c.bold(task.id)} ${c.dim(role)}`, ...wrap(task.title, w, 2), ''];
+  const parent = task.parentId ? [c.dim(clip(`↳ ${task.parentId}`, w))] : [];
+  return [`${mark}${c.bold(task.id)} ${c.dim(role)}`, ...parent, ...wrap(task.title, w, 2), ''];
 }
 
 function renderColumns(groups, cols) {
@@ -82,8 +83,9 @@ function renderList(groups, cols) {
     if (!list.length) continue;
     out.push(col.color(c.bold(`${col.label()} (${list.length})`)));
     for (const task of list.slice(0, MAX_CARDS)) {
-      const room = Math.max(10, cols - [...`  • ${task.id} @${task.role || '?'} `].length);
-      out.push(`  ${task.status === 'failed' ? c.red('✗') : col.color('•')} ${c.bold(task.id)} ${c.dim('@' + (task.role || '?'))} ${clip(task.title || '', room)}`);
+      const parent = task.parentId ? ` ↳ ${task.parentId}` : '';
+      const room = Math.max(10, cols - [...`  • ${task.id} @${task.role || '?'}${parent} `].length);
+      out.push(`  ${task.status === 'failed' ? c.red('✗') : col.color('•')} ${c.bold(task.id)} ${c.dim('@' + (task.role || '?'))}${c.dim(parent)} ${clip(task.title || '', room)}`);
     }
     if (list.length > MAX_CARDS) out.push(c.dim(t(`  +${list.length - MAX_CARDS} más`, `  +${list.length - MAX_CARDS} more`)));
   }

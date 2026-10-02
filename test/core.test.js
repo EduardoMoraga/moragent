@@ -106,6 +106,11 @@ test('json roundtrip and copyDir only writes changes', () => {
 });
 
 test('config presets and CLI assignment fall back to installed CLIs', () => {
+  const adaptive = defaultConfig({ project: 'research' });
+  assert.deepEqual(Object.keys(adaptive.crew), PRESETS.adaptive.roles);
+  assert.equal(adaptive.crew.executor.cli, 'codex');
+  assert.equal(adaptive.crew.researcher.cli, 'pi');
+  assert.equal(adaptive.crew.reviewer.cli, 'claude');
   const cfg = defaultConfig({ project: 'p', lang: 'en', preset: 'trio' });
   assert.deepEqual(Object.keys(cfg.crew), PRESETS.trio.roles);
   assert.equal(cfg.crew.backend.cli, 'codex');

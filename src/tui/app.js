@@ -1,10 +1,12 @@
 import { render } from './render.js';
-import { LineEditor, decodeKeys } from './input.js';
+import { LineEditor, TerminalKeyDecoder } from './input.js';
 import { TerminalScreen } from './screen.js';
 import { LoginOverlay } from './login.js';
 
 export async function runTui({ engine, input = process.stdin, output = process.stdout }) {
   const editor = new LineEditor();
+  const keyDecoder = new TerminalKeyDecoder();
+  let escapeTimer = null;
   let scroll = 0;
   let newCount = 0;
   let lastMessageCount = 0;
@@ -18,11 +20,12 @@ export async function runTui({ engine, input = process.stdin, output = process.s
   const state = () => engine.store?.state || {};
   const page = () => Math.max(3, Math.floor((screen.size().rows || 24) / 2));
   const atBottom = () => scroll === 0;
-  const draw = ({ cols, rows }) => render(state(), { cols, rows, input: editor.value, scroll, overlay: overlay?.snapshot?.() || overlay, sidebar, newCount });
-  const exit = () => { cleanup(); engine.stop?.(); screen.restore(); resolveDone(); };
+  const draw = ({ cols, rows }) => render(state(), { cols, rows, input: editor.value, inputCursor: editor.cursor, scroll, overlay: overlay?.snapshot?.() || overlay, sidebar, newCount });
+  const exit = () => { cleanup(); engine.stop?.(); if (input.isTTY && output.isTTY) output.write('\x1b[?2004l'); screen.restore(); resolveDone(); };
   const sigint = () => exit();
   const sigterm = () => exit();
   function cleanup() {
+    if (escapeTimer) clearTimeout(escapeTimer);
     engine.store?.off?.('change', onChange);
     input.off?.('data', onData);
     process.off('SIGINT', sigint);
@@ -75,10 +78,9 @@ export async function runTui({ engine, input = process.stdin, output = process.s
       }
     }
   }
-  async function onData(buf) {
-    const raw = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
-    if (/^\/(salir|exit)\r?\n?$/.test(raw.trimEnd())) return exit();
-    for (const key of decodeKeys(buf)) {
+  async function onData(buf, flushEscape = false) {
+    if (escapeTimer) { clearTimeout(escapeTimer); escapeTimer = null; }
+    for (const key of flushEscape ? keyDecoder.flush() : keyDecoder.push(buf)) {
       if (overlay) { await handleOverlay(key); screen.requestRender(); continue; }
       if (key.name === 'tab') { openAgents(); screen.requestRender(); continue; }
       if (key.name === 'ctrl-b') { sidebar = !sidebar; if (colsNarrow()) overlay = sidebar ? { type: 'sidebar' } : null; screen.requestRender(); continue; }
@@ -99,6 +101,7 @@ export async function runTui({ engine, input = process.stdin, output = process.s
       else editor.handle(key);
       screen.requestRender();
     }
+    if (keyDecoder.hasPendingEscape) escapeTimer = setTimeout(() => { escapeTimer = null; void onData(null, true); }, 40);
   }
   function colsNarrow() { return (screen.size().cols || 80) < 100; }
   lastMessageCount = (state().messages || []).length;
@@ -107,5 +110,6 @@ export async function runTui({ engine, input = process.stdin, output = process.s
   process.once('SIGINT', sigint);
   process.once('SIGTERM', sigterm);
   screen.start(draw);
+  if (input.isTTY && output.isTTY) output.write('\x1b[?2004h');
   return done;
 }

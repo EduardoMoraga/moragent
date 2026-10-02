@@ -181,7 +181,7 @@ test('API-only first run works in a separate process with no agent CLIs or git o
     requests.push(body);
     let message;
     if (requests.length === 1) {
-      message = { role: 'assistant', content: '```moragent-plan\n{"tasks":[{"id":"t1","role":"backend","prompt":"Create api-only.txt"}]}\n```' };
+      message = { role: 'assistant', content: '```moragent-plan\n{"tasks":[{"id":"t1","role":"executor","prompt":"Create api-only.txt"}]}\n```' };
     } else if (requests.length === 2) {
       message = { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'api-only.txt', content: 'API only\n' }) } }] };
     } else if (requests.length === 3) {

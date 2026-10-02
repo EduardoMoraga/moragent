@@ -249,8 +249,8 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     const lang = languagePinned ? store.state.lang : guessLang(goal, store.state.lang);
     setLang(lang);
     store.set({ lang });
-    const clis = assignClis(PRESETS.squad.roles, installedClis());
-    config = defaultConfig({ project: path.basename(cwd), lang, preset: 'squad', clis });
+    const clis = assignClis(PRESETS.adaptive.roles, installedClis());
+    config = defaultConfig({ project: path.basename(cwd), lang, preset: 'adaptive', clis });
     config.goal = goal;
     // An automatically chosen API is still this project's orchestrator, not a one-turn accident.
     if (!preferredProvider) preferredProvider = store.state.orchestrator.provider;
@@ -525,6 +525,10 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
       byPlanId[pt.id] = { task, pt };
       store.setAgent(task.id, { id: task.id, role: pt.role, provider: pt.provider, status: 'queued', taskId: task.id, title: pt.title, lastLine: pt.dependsOn.length ? t(`espera ${pt.dependsOn.join(', ')}`, `waits for ${pt.dependsOn.join(', ')}`) : t('en cola', 'queued') });
     }
+    // Persist the DAG with durable bus IDs after all tasks have been reserved.
+    for (const { task, pt } of Object.values(byPlanId)) {
+      if (pt.dependsOn.length) updateTask(root, task.id, { dependencies: pt.dependsOn.map((id) => byPlanId[id].task.id) });
+    }
     activePlans.add(planState);
     store.set({ orchestrator: { ...store.state.orchestrator, status: 'running' } });
     const ticker = setInterval(() => {
@@ -732,7 +736,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
       reviewRounds = 0;
       let memory = '';
       const mem = await optional('../memory/index.js');
-      try { memory = mem?.contextPack ? mem.contextPack({ root, role: 'lead', query: msg, budget: 4000, lang: store.state.lang }) : ''; } catch { memory = ''; }
+      try { memory = mem?.contextPack ? mem.contextPack({ root, role: 'lead', query: msg, budget: 4000, lang: store.state.lang, sessionId: store.state.sessionId }) : ''; } catch { memory = ''; }
       if (epoch !== turnEpoch) return;
       const answer = await orchestratorTurn(turnPrompt({ text: msg, memory, es: store.state.lang !== 'en' }));
       const inferred = explicit ? null : literalSingleLineExpectation(msg);
@@ -959,7 +963,8 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
         const [role, ...words] = list;
         const body = words.join(' ').trim();
         if (!role || !body || (root && !roles.includes(role))) {
-          store.addMessage({ from: 'system', text: t(`Uso: /tarea <rol> <qué hacer>\nRoles: ${roles.join(', ') || 'backend, frontend, helper, dev'}\nEjemplo: /tarea backend crea temp.js con cToF y su test`, `Usage: /task <role> <what to do>\nRoles: ${roles.join(', ') || 'backend, frontend, helper, dev'}\nExample: /task backend create temp.js with cToF and a test`) });
+          const example = roles[0] || '<rol>';
+          store.addMessage({ from: 'system', text: t(`Uso: /tarea <rol> <qué hacer>\nRoles: ${roles.join(', ') || 'ninguno configurado'}\nEjemplo: /tarea ${example} investiga la solicitud y entrega fuentes`, `Usage: /task <role> <what to do>\nRoles: ${roles.join(', ') || 'none configured'}\nExample: /task ${example} research the request and report sources`) });
           return;
         }
         pendingDeployments++;
@@ -1012,7 +1017,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
         return;
       }
       case 'equipo': case 'crew': {
-        if (!root) { store.addMessage({ from: 'system', text: t('Todavía no hay proyecto: escribe qué quieres construir.', 'No project yet: say what you want to build.') }); return; }
+        if (!root) { store.addMessage({ from: 'system', text: t('Todavía no hay proyecto: describe qué quieres lograr.', 'No project yet: describe what you want to accomplish.') }); return; }
         const [role, cli] = list;
         if (role && cli) {
           if (rejectBusyConfiguration()) return;
@@ -1167,7 +1172,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 
   function helpText() {
     return t(`Escribe lo que necesitas y el orquestador decide si responde o despliega agentes.
-/tarea <rol> <texto>  desplegar un agente directo (ej: /tarea backend crea temp.js)
+/tarea <rol> <texto>  desplegar un agente directo según su misión
 /login            conectar suscripciones o API keys
 /equipo           ver el equipo · /equipo <rol> <motor> para cambiarlo
 /orquestador <m>  elegir el motor del orquestador
@@ -1182,7 +1187,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /abrir <rol|id>   sacar un subagente a un panel externo
 /cancel           cancelar lo que está corriendo
 /salir            salir (Ctrl+C dos veces)`, `Type what you need; the orchestrator either answers or deploys agents.
-/task <role> <text>   deploy one agent directly (e.g. /task backend create temp.js)
+/task <role> <text>   deploy one agent directly by its mission
 /login            connect subscriptions or API keys
 /crew             show the crew · /crew <role> <engine> to change it
 /orchestrator <e> pick the orchestrator engine
@@ -1211,7 +1216,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     const where = elsewhere ? t(` (en ${root}; para un proyecto nuevo en esta carpeta usa /nuevo)`, ` (in ${root}; for a new project in this folder use /new)`) : '';
     store.addMessage({ from: 'orchestrator', text: root
       ? t(`${conn ? `${conn}\n` : ''}Proyecto ${config.project}${where}. ¿Qué hacemos? Pide algo o usa /tarea para desplegar un agente.${resumeHint}`, `${conn ? `${conn}\n` : ''}Project ${config.project}${where}. What are we doing? Ask, or use /task to deploy an agent.${resumeHint}`)
-      : t(`${conn ? `${conn}\n` : ''}Esta carpeta todavía no es un proyecto MORAGENT. Cuéntame qué quieres construir y lo preparo.`, `${conn ? `${conn}\n` : ''}This folder is not a MORAGENT project yet. Tell me what you want to build and I will set it up.`) });
+      : t(`${conn ? `${conn}\n` : ''}Esta carpeta todavía no es un proyecto MORAGENT. Cuéntame qué quieres lograr y lo preparo.`, `${conn ? `${conn}\n` : ''}This folder is not a MORAGENT project yet. Tell me what you want to accomplish and I will set it up.`) });
   };
   return engine;
 }

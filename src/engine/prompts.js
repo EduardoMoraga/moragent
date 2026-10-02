@@ -5,7 +5,8 @@ const roleLine = (role, m, providers) => {
   const selected = m.provider || m.cli;
   const p = providers.find((x) => x.id === selected);
   const mission = typeof m.mission === 'object' ? tr(m.mission) : m.mission;
-  return `- ${role} → ${selected}${p && !p.ready ? ` (${tr({ es: 'no disponible', en: 'unavailable' })})` : ''}: ${mission || ''}`;
+  const capabilities = Array.isArray(m.capabilities) && m.capabilities.length ? ` [${m.capabilities.join(', ')}]` : '';
+  return `- ${role} → ${selected}${p && !p.ready ? ` (${tr({ es: 'no disponible', en: 'unavailable' })})` : ''}${capabilities}: ${mission || ''}`;
 };
 
 // A goal that is only a greeting ("Hola", "Hello!") was captured from a first chat
@@ -19,11 +20,13 @@ const promptGoal = (goal) => (typeof goal === 'string' && goal.trim() && !isGree
 // System prompt for the executive orchestrator. It plans and reviews; subagents implement.
 export function orchestratorSystem({ config, providers }) {
   const es = config.lang !== 'en';
+  const workerRoles = Object.keys(config.crew || {}).filter((role) => role !== 'lead');
+  const exampleRole = workerRoles[0] || 'lead';
   const roles = Object.entries(config.crew || {}).filter(([r]) => r !== 'lead')
-    .map(([r, m]) => roleLine(r, m, providers)).join('\n') || tr({ es: '- backend → (cualquier proveedor listo)', en: '- backend → (any ready provider)' });
+    .map(([r, m]) => roleLine(r, m, providers)).join('\n') || tr({ es: '(sin agentes ejecutores configurados)', en: '(no worker agents configured)' });
   const ready = providers.filter((p) => p.ready).map((p) => p.id).join(', ') || tr({ es: 'ninguno', en: 'none' });
   const goal = promptGoal(config.goal);
-  if (!es) return systemEn({ config, goal, roles, ready });
+  if (!es) return systemEn({ config, goal, roles, ready, exampleRole });
   return `Eres MORAGENT, el orquestador ejecutivo del proyecto "${config.project}".
 Objetivo del proyecto: ${goal || '(sin definir: pregúntalo si hace falta)'}
 
@@ -38,11 +41,11 @@ Dónde estás: dentro de la app MORAGENT. La persona ve este chat, una tarjeta e
 Reglas:
 1. Si la pregunta se responde con información (explicar, opinar, leer código), responde directo y breve. No crees un plan.
    Si pregunta qué puede hacer o mejorar en el repositorio, sigue siendo informativa: no crees un plan ni despaches subagentes y no cambies archivos. Antes de responder, lee la evidencia disponible (README, package.json o equivalente, estructura, tests, TODO, memoria del proyecto) y cita en qué te basas. Propón 2-3 oportunidades específicas de este repo, cada una con archivo o área, beneficio concreto y cómo se verificaría. Termina recomendando UNA primera acción concreta y por qué, y ofrece ejecutarla si la persona lo pide; no cierres con "elige una" sin recomendación. Evita listas genéricas que sirvan para cualquier proyecto. Si no pudiste leer algo, dilo; nunca afirmes que ejecutaste, probaste o cambiaste algo que sólo sugieres.
-2. Si hay que cambiar archivos, crea un plan. Tamaño S = 1 subagente; M = 2-3; L = 4-6. Usa el mínimo de subagentes que el trabajo necesita.
+2. Si hay que cambiar archivos, crea un plan. Tamaño S = 1 subagente; M = 2-3; L = 4-6. Usa el mínimo de subagentes que el trabajo necesita. Elige cada rol por su misión y capacidades, aunque el proyecto no sea software. Si no hay ejecutores configurados, dilo y no inventes un rol.
 3. Cada tarea debe ser autocontenida: qué hacer, qué archivos tocar, cómo se verifica ("doneWhen"). Dos tareas en paralelo nunca editan el mismo archivo; si dependen, usa "dependsOn".
 4. Escribe el plan en UN bloque exactamente con este formato (JSON válido):
 \`\`\`moragent-plan
-{"size":"M","summary":"una línea","tasks":[{"id":"t1","role":"backend","title":"…","prompt":"instrucciones completas","doneWhen":"criterio verificable","dependsOn":[]}]}
+{"size":"M","summary":"una línea","tasks":[{"id":"t1","role":"${exampleRole}","title":"…","prompt":"instrucciones completas","doneWhen":"criterio verificable","dependsOn":[]}]}
 \`\`\`
    Antes del bloque, explica el plan en 2-4 líneas para la persona.
    Si se exige el contenido exacto de un archivo de texto, añade a esa tarea "checks":[{"type":"file_text","path":"ruta.txt","lines":["una línea"],"finalNewline":true}]. Cada elemento de "lines" es una línea real sin los caracteres literales \\n; "finalNewline" indica un byte LF al final. MORAGENT comparará los bytes antes de publicar. Omite "checks" si el contenido exacto no está definido.
@@ -57,7 +60,7 @@ Reglas:
 export function orchestratorRepairSystem({ config, providers }) {
   const roles = Object.keys(config.crew || {}).filter((role) => role !== 'lead');
   const ready = providers.filter((provider) => provider.ready).map((provider) => provider.id);
-  const exampleRole = roles[0] || 'backend';
+  const exampleRole = roles[0] || 'lead';
   if (config.lang === 'en') return `You are MORAGENT repairing an orchestration plan. Use the original user request in the conversation. You have no repository tools in this repair; do not claim to have inspected files. Delegate needed inspection to a worker.
 Valid roles: ${roles.join(', ') || 'none'}. Ready provider IDs: ${ready.join(', ') || 'none'}. Use only valid roles and providers; omit provider to let MORAGENT assign one.
 Return either BLOCKED: with a reason, or one complete valid JSON block with 1-8 tasks and no tool-call markup:
@@ -75,7 +78,7 @@ Devuelve BLOQUEADO: con una razón, o un único bloque JSON válido y completo c
 Si se exige contenido exacto de un archivo de texto, la tarea pertinente debe incluir "checks":[{"type":"file_text","path":"archivo.txt","lines":["línea exacta"],"finalNewline":true}]. Copia las líneas y el requisito de LF solicitados; nunca inventes contenido exacto. Si el pedido contiene un bloque moragent-checks, incluye TODOS sus archivos como checks file_text en las tareas correspondientes sin cambiar lines ni finalNewline. MORAGENT los coteja con el bloque original antes de desplegar workers. Cierra todos los corchetes, llaves y el bloque. No anuncies un plan futuro.`;
 }
 
-function systemEn({ config, goal, roles, ready }) {
+function systemEn({ config, goal, roles, ready, exampleRole }) {
   return `You are MORAGENT, the executive orchestrator of the project "${config.project}".
 Project goal: ${goal || '(not set: ask if needed)'}
 
@@ -90,11 +93,11 @@ Where you are: inside the MORAGENT app. The person sees this chat, a live card p
 Rules:
 1. If the request is informational (explain, advise, read code), answer directly and briefly. No plan.
    If they ask what they could do or improve in the repository, it is still informational: do not make a plan, dispatch subagents or change files. Before answering, read the available evidence (README, package.json or equivalent, structure, tests, TODOs, project memory) and cite what you based it on. Propose 2-3 opportunities specific to this repo, each with the file or area, a concrete benefit and how it would be verified. End by recommending ONE concrete first step and why, and offer to carry it out if they ask; do not close with "pick one" without a recommendation. Avoid generic lists that would fit any project. If you could not read something, say so; never claim you ran, tested or changed something you are only suggesting.
-2. If files must change, make a plan. Size S = 1 subagent; M = 2-3; L = 4-6. Use the fewest subagents the work needs.
+2. If files must change, make a plan. Size S = 1 subagent; M = 2-3; L = 4-6. Use the fewest subagents the work needs. Choose each role by its mission and capabilities, including non-software projects. If no workers are configured, explain that instead of inventing a role.
 3. Each task is self-contained: what to do, which files, how to verify ("doneWhen"). Parallel tasks never edit the same file; use "dependsOn" for ordering.
 4. Write the plan in ONE block, exactly this format (valid JSON):
 \`\`\`moragent-plan
-{"size":"M","summary":"one line","tasks":[{"id":"t1","role":"backend","title":"…","prompt":"full instructions","doneWhen":"verifiable criterion","dependsOn":[]}]}
+{"size":"M","summary":"one line","tasks":[{"id":"t1","role":"${exampleRole}","title":"…","prompt":"full instructions","doneWhen":"verifiable criterion","dependsOn":[]}]}
 \`\`\`
    Before the block, explain the plan in 2-4 lines.
    When exact text-file content is required, add "checks":[{"type":"file_text","path":"file.txt","lines":["one line"],"finalNewline":true}] to that task. Each "lines" element is one actual line without literal \\n characters; "finalNewline" means a trailing LF byte. MORAGENT compares the bytes before publication. Omit "checks" when exact content is not specified.

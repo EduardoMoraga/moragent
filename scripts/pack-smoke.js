@@ -8,6 +8,7 @@ import { spawnPlan } from '../src/core/exec.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'moragent-pack-smoke-'));
 const isWindows = process.platform === 'win32';
+const expectedVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
 function run(command, args = [], { cwd = root, env = process.env, allowFailure = false } = {}) {
   const plan = spawnPlan(command, args);
@@ -42,6 +43,8 @@ try {
   for (const name of [
     'bin/mora.js', 'src/cli.js', 'src/engine/workspace.js',
     'src/engine/workspace-async.js', 'src/engine/workspace-worker.js', 'templates/spec/es/proposal.md',
+    'src/commands/projects.js', 'src/commands/remote.js', 'src/commands/telegram.js',
+    'src/projects/registry.js', 'src/remote/open.js', 'src/telegram/bridge.js', 'src/tui/cell-width.js',
     'templates/skills/moragent/SKILL.md', 'plugin/skills/moragent/SKILL.md',
     'install.sh', 'install.ps1', 'docs/ARCHITECTURE.md', 'docs/demo.tape',
     'examples/quickstart/README.md', '.claude-plugin/plugin.json', '.codex-plugin/plugin.json',
@@ -61,12 +64,19 @@ try {
   fs.mkdirSync(fakeDirectory);
   fakeCli(fakeDirectory, 'codex');
   fakeCli(fakeDirectory, 'claude');
-  const env = { ...process.env, PATH: [binaryDirectory, fakeDirectory, process.env.PATH || ''].join(path.delimiter) };
+  const env = { ...process.env, MORAGENT_HOME: path.join(temporary, 'home'), PATH: [binaryDirectory, fakeDirectory, process.env.PATH || ''].join(path.delimiter) };
 
   const app = path.join(temporary, 'app');
   fs.mkdirSync(app);
-  run(mora, ['--version'], { cwd: app, env });
+  const installedVersion = run(mora, ['--version'], { cwd: app, env }).stdout.trim();
+  if (!installedVersion.includes(expectedVersion)) throw new Error(`Installed version mismatch: ${installedVersion}`);
   run(mora, ['init', '--yes', '--preset', 'trio'], { cwd: app, env });
+  const project = JSON.parse(run(mora, ['project', 'add', app, '--json'], { cwd: app, env }).stdout);
+  const projectList = JSON.parse(run(mora, ['project', 'list', '--json'], { cwd: app, env }).stdout);
+  if (!project.created || projectList.projects.length !== 1) throw new Error('Installed project registry failed');
+  const remote = JSON.parse(run(mora, ['remote', 'add', 'builder', '/srv/work', '--json'], { cwd: app, env }).stdout);
+  const remoteList = JSON.parse(run(mora, ['remote', 'list', '--json'], { cwd: app, env }).stdout);
+  if (!remote.created || remoteList.remotes.length !== 1) throw new Error('Installed remote registry failed');
   const claudeSettings = JSON.parse(fs.readFileSync(path.join(app, '.claude', 'settings.json'), 'utf8'));
   if (!JSON.stringify(claudeSettings).includes('memory capture --from claude')) throw new Error('Claude memory hook missing');
   if (fs.existsSync(path.join(app, '.codex', 'config.toml'))) throw new Error('Unexpected project Codex config');

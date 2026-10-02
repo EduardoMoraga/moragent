@@ -13,9 +13,9 @@ export const LOGO = [
 export function getVersion() {
   try {
     const pkg = JSON.parse(fs.readFileSync(PKG_PATH, 'utf8'));
-    return pkg.version || '5.2.0';
+    return pkg.version || '5.3.0-beta.1';
   } catch {
-    return '5.2.0';
+    return '5.3.0-beta.1';
   }
 }
 
@@ -263,9 +263,10 @@ export function welcomeLines(state = {}, options = {}) {
   }
 
   // 4. One line of tips
+  const firstRole = Object.keys(state?.crew || {}).find((role) => role !== 'lead');
   const tips = isEs
-    ? 'pide algo o /tarea backend … · / comandos · Tab agentes'
-    : 'ask or /task backend … · / commands · Tab agents';
+    ? `pide algo${firstRole ? ` o /tarea ${firstRole} …` : ''} · / comandos · Tab agentes`
+    : `ask${firstRole ? ` or /task ${firstRole} …` : ''} · / commands · Tab agents`;
   out.push(` ${tips}`);
 
   // Guarantee visible width <= cols on all returned lines
