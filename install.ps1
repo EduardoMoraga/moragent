@@ -21,10 +21,48 @@ if ($branch -notmatch '^[A-Za-z0-9._/-]+$' -or $branch.StartsWith('/') -or $bran
   Fail "MORAGENT_BRANCH no es una rama válida / is not a valid branch name"
 }
 $pkg = "moragent"
+$sourceKind = "npm"
+$repoUrl = "https://github.com/EduardoMoraga/moragent.git"
+$tarballUrl = "https://github.com/EduardoMoraga/moragent/archive/refs/heads/$branch.tar.gz"
 npm view moragent version *> $null
-if ($branch -ne "master" -or $env:MORAGENT_FROM_GIT -eq "1" -or $LASTEXITCODE -ne 0) { $pkg = "https://github.com/EduardoMoraga/moragent/archive/refs/heads/$branch.tar.gz" }
+if ($branch -ne "master" -or $env:MORAGENT_FROM_GIT -eq "1" -or $LASTEXITCODE -ne 0) {
+  $pkg = $tarballUrl
+  $sourceKind = "github-tarball"
+}
 
-Info "Instalando MORAGENT desde $branch / Installing MORAGENT from $branch"
+$revision = ""
+if ($sourceKind -eq "github-tarball") {
+  try {
+    $commit = Invoke-RestMethod -Headers @{ 'User-Agent' = 'moragent-install' } -Uri "https://api.github.com/repos/EduardoMoraga/moragent/commits/$([uri]::EscapeDataString($branch))"
+    if ($commit.sha -notmatch '^[0-9a-f]{40}$') { Fail "No pude resolver la revisión de $branch / Could not resolve $branch revision" }
+    $revision = $commit.sha
+    $tarballUrl = "https://github.com/EduardoMoraga/moragent/archive/$revision.tar.gz"
+    $pkg = $tarballUrl
+  } catch { Fail "No pude resolver la revisión de $branch / Could not resolve $branch revision" }
+}
+
+function Write-InstallMetadata($prefix) {
+  if ($sourceKind -ne "github-tarball") { return }
+  $npmRoot = (& npm root -g --prefix $prefix | Select-Object -Last 1).Trim()
+  $packageRoot = Join-Path $npmRoot 'moragent'
+  $metadata = [ordered]@{
+    schemaVersion = 1
+    installedAt = (Get-Date).ToUniversalTime().ToString('o')
+    revision = $revision
+    source = [ordered]@{
+      type = 'github-tarball'
+      repoUrl = $repoUrl
+      branch = $branch
+      ref = "refs/heads/$branch"
+      tarballUrl = $tarballUrl
+    }
+  } | ConvertTo-Json -Depth 4
+  $metadataPath = Join-Path $packageRoot '.moragent-install.json'
+  [System.IO.File]::WriteAllText($metadataPath, "$metadata`n", [System.Text.UTF8Encoding]::new($false))
+}
+
+$sourceLabel = if ($revision) { "$branch ($revision)" } else { "npm" }
+Info "Instalando MORAGENT desde $sourceLabel / Installing MORAGENT from $sourceLabel"
 $installedPrefix = (& npm prefix -g | Select-Object -Last 1).Trim()
 $installedMora = Join-Path $installedPrefix 'mora.cmd'
 # npm is a native command: failures set $LASTEXITCODE instead of throwing.
@@ -35,10 +73,12 @@ if ($LASTEXITCODE -ne 0) {
   New-Item -ItemType Directory -Force -Path $prefix | Out-Null
   npm i -g --prefix $prefix $pkg
   if ($LASTEXITCODE -ne 0) { Fail "npm install falló / npm install failed" }
+  $installedPrefix = $prefix
   $installedMora = Join-Path $prefix 'mora.cmd'
   # On Windows npm puts global shims directly in the prefix, not in prefix\bin.
   if (($env:Path -split ';') -notcontains $prefix) { Warn "Agrega a PATH / Add to PATH: $prefix" }
 }
+Write-InstallMetadata $installedPrefix
 
 if (Test-Path $installedMora) {
   Info "Versión instalada / Installed version: $(& $installedMora --version)"

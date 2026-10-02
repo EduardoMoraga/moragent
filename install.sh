@@ -30,24 +30,80 @@ case "$branch" in
   ''|/*|*/|*//*|*..*|*[!A-Za-z0-9._/-]*) fail "MORAGENT_BRANCH no es una rama válida / is not a valid branch name" ;;
 esac
 pkg="moragent"
+source_kind="npm"
+repo_url="https://github.com/EduardoMoraga/moragent.git"
+tarball_url="https://github.com/EduardoMoraga/moragent/archive/refs/heads/${branch}.tar.gz"
 if [ "$branch" != "master" ] || [ "${MORAGENT_FROM_GIT:-0}" = "1" ] || ! npm view moragent version >/dev/null 2>&1; then
-  pkg="https://github.com/EduardoMoraga/moragent/archive/refs/heads/${branch}.tar.gz"
+  pkg="$tarball_url"
+  source_kind="github-tarball"
 fi
 
-info "Instalando MORAGENT desde ${branch} / Installing MORAGENT from ${branch}"
-installed_mora="$(npm prefix -g)/bin/mora"
+resolve_revision() {
+  node - "$repo_url" "$branch" <<'NODE'
+const https = require('node:https');
+const [repoUrl, branch] = process.argv.slice(2);
+const match = repoUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/.]+)(?:\.git)?$/);
+if (!match) process.exit(1);
+const path = `/repos/${match[1]}/${match[2]}/commits/${encodeURIComponent(branch)}`;
+const req = https.request({ hostname: 'api.github.com', path, headers: { 'User-Agent': 'moragent-install' } }, (res) => {
+  let body = '';
+  res.setEncoding('utf8');
+  res.on('data', (chunk) => { body += chunk; });
+  res.on('end', () => {
+    try {
+      const json = JSON.parse(body);
+      if (res.statusCode !== 200 || !/^[0-9a-f]{40}$/i.test(json.sha)) process.exit(1);
+      console.log(json.sha);
+    } catch { process.exit(1); }
+  });
+});
+req.on('error', () => process.exit(1));
+req.end();
+NODE
+}
+
+write_metadata() {
+  [ "$source_kind" = "github-tarball" ] || return 0
+  revision="$1"
+  prefix="$2"
+  package_root="$(npm root -g --prefix "$prefix")/moragent"
+  node - "$package_root" "$repo_url" "$branch" "$tarball_url" "$revision" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const [root, repoUrl, branch, tarballUrl, revision] = process.argv.slice(2);
+fs.writeFileSync(path.join(root, '.moragent-install.json'), JSON.stringify({
+  schemaVersion: 1,
+  installedAt: new Date().toISOString(),
+  revision,
+  source: { type: 'github-tarball', repoUrl, branch, ref: `refs/heads/${branch}`, tarballUrl },
+}, null, 2) + '\n');
+NODE
+}
+
+revision=""
+if [ "$source_kind" = "github-tarball" ]; then
+  revision="$(resolve_revision)" || fail "No pude resolver la revisión de ${branch} / Could not resolve ${branch} revision"
+  tarball_url="https://github.com/EduardoMoraga/moragent/archive/${revision}.tar.gz"
+  pkg="$tarball_url"
+fi
+
+info "Instalando MORAGENT desde ${branch} (${revision:-npm}) / Installing MORAGENT from ${branch} (${revision:-npm})"
+installed_prefix="$(npm prefix -g)"
+installed_mora="$installed_prefix/bin/mora"
 if npm i -g "$pkg"; then
   :
 else
   warn "Falló instalación global (permisos). Reintentando en ~/.local / Global install failed, retrying in ~/.local"
   mkdir -p "$HOME/.local"
   npm i -g --prefix "$HOME/.local" "$pkg"
+  installed_prefix="$HOME/.local"
   installed_mora="$HOME/.local/bin/mora"
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) : ;;
     *) warn "Agrega a PATH: export PATH=\"$HOME/.local/bin:$PATH\"" ;;
   esac
 fi
+write_metadata "$revision" "$installed_prefix"
 
 if [ -x "$installed_mora" ]; then
   info "Versión instalada / Installed version: $("$installed_mora" --version)"

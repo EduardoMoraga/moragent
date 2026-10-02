@@ -108,7 +108,7 @@ Type these slash commands inside `moragent`:
 
 - `/help`: show available commands
 - `/login`: connect subscriptions or configure API keys
-- `/update` (or `mora update` inside the app): check the remote and update an installation linked to its Git repository; `--check` only checks. Restart the app after updating. Installations without a verifiable source are left untouched.
+- `/update` (or `mora update` inside the app): check the remote and update a Git checkout or a GitHub tarball installation created by `install.sh`/`install.ps1`; `--check` only checks. Restart the app after updating. Older packages without recorded source/branch metadata are left untouched; reinstall with `MORAGENT_BRANCH=...` to migrate previews.
 - `/crew` (or `/equipo`): view the crew · `/crew <role> <engine>` to reassign roles. API choices affect native workers; the external pane keeps its CLI.
 - `/orchestrator <engine>` (or `/orquestador <m>`): pick the orchestrator engine. If the preferred engine is unavailable, MORAGENT announces a temporary fallback and restores the preference when it reconnects.
 - `/model` or `/model <role>` (or `/modelo`): browse models across all providers and pick one for the orchestrator or a role. `/model <name>` and `/model <role> <name>` set a model directly; `default` uses the selected provider's default.

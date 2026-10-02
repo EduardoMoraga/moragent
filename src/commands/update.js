@@ -14,8 +14,9 @@ export default {
       throw new MoragentError('USAGE', this.usage);
     }
     const result = await selfUpdate({ check: !!argv.flags.check });
-    if (ctx.json) json({ ok: !['unsupported', 'dirty', 'diverged'].includes(result.status), ...result });
+    const failureStatuses = ['unsupported', 'dirty', 'diverged', 'failed'];
+    if (ctx.json) json({ ok: !failureStatuses.includes(result.status), ...result });
     else out(updateMessage(result, getLang()));
-    return ['unsupported', 'dirty', 'diverged'].includes(result.status) ? 1 : 0;
+    return failureStatuses.includes(result.status) ? 1 : 0;
   },
 };
