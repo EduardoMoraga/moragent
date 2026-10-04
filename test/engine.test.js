@@ -8,6 +8,8 @@ import { extractPlan, stripPlan, normalizePlan, assignProviders } from '../src/e
 import { defaultConfig } from '../src/core/config.js';
 import { scaffold } from '../src/commands/init.js';
 import { listTasks } from '../src/bus/tasks.js';
+import { createTask, updateTask } from '../src/bus/tasks.js';
+import { readStatus } from '../src/bus/status.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mora-engine-'));
 
@@ -87,6 +89,7 @@ test('engine: message → plan → subagents in dependency order → memory → 
 
   const tasks = listTasks(root);
   assert.deepEqual(tasks.map((t) => t.status), ['done', 'done']);
+  assert.ok(tasks.every((task) => task.execution?.mode === 'engine' && task.execution.pid === process.pid));
   assert.equal(fs.readFileSync(path.join(root, 'hola.txt'), 'utf8'), 'hola');
   const episodic = fs.readdirSync(path.join(root, '.moragent', 'memory', 'episodic'));
   assert.equal(episodic.length, 2, 'one episodic note per task');
@@ -149,6 +152,58 @@ test('first message picks the project language', async () => {
   assert.equal(guessLang('Crea una API de tareas con tests'), 'es');
   assert.equal(guessLang('Build a task API with tests'), 'en');
   assert.equal(guessLang('API', 'es'), 'es');
+});
+
+test('/estado shows persisted task health without dispatching another worker', async () => {
+  const root = tmp();
+  const cfg = defaultConfig({ project: 'demo', lang: 'es', preset: 'duo', clis: { lead: 'claude', backend: 'codex' } });
+  scaffold(root, cfg);
+  const created = createTask({ root, role: 'backend', body: 'Revisar tarea' });
+  updateTask(root, created.id, { status: 'running', execution: { mode: 'engine', pid: 99999999, handle: 'pid:99999999', provider: 'codex' } });
+  const calls = [];
+  const engine = await createEngine({ root, config: cfg, providers: fakeProviders(calls) });
+  await engine.command('estado', [created.id]);
+  assert.match(engine.store.state.messages.at(-1).text, /DESCONOCIDO/);
+  assert.match(engine.store.state.messages.at(-1).text, /mora task show/);
+  assert.equal(calls.length, 0);
+  assert.equal(listTasks(root)[0].status, 'running');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('engine exposes a live process handle while the worker is still running', async () => {
+  const root = tmp();
+  const cfg = defaultConfig({ project: 'demo', lang: 'en', preset: 'duo', clis: { lead: 'claude', backend: 'codex' } });
+  scaffold(root, cfg);
+  const calls = [];
+  const providers = fakeProviders(calls);
+  let release;
+  let startedResolve;
+  const started = new Promise((resolve) => { startedResolve = resolve; });
+  let count = 0;
+  providers.getProvider('codex').run = async () => {
+    count++;
+    if (count === 1) {
+      const gate = new Promise((resolve) => { release = resolve; });
+      startedResolve();
+      await gate;
+    }
+    return { ok: true, text: 'Finished' };
+  };
+  const engine = await createEngine({ root, config: cfg, providers });
+  const sending = engine.send('build and review the file');
+  await started;
+  try {
+    const running = readStatus(root).tasks.find((item) => item.recordedStatus === 'running');
+    assert.equal(running.status, 'running');
+    assert.equal(running.run.pid, process.pid);
+    assert.equal(running.run.alive, true);
+    assert.equal(count, 1);
+    assert.deepEqual(readStatus(root).tasks.find((item) => item.id === running.id), running);
+  } finally {
+    release();
+    await sending;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('appendLog merges streamed text into lines and keeps tools as entries', async () => {

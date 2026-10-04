@@ -177,11 +177,13 @@ mora spec status                                     # consulta el estado de las
 mora dispatch backend "API de órdenes" --spec <slug> # envía una tarea al bus
 mora wait T-0001                                     # espera a que termine la tarea
 mora board                                           # tablero kanban en terminal
+mora status [T-0001] --json                          # estado local y próxima acción, sin reintentos
 mora memory add "Usar UUIDv7" --tier canonical       # registra una decisión de arquitectura
 mora brain link                                      # enlaza con tu vault de Obsidian
 ```
 
 Todos los comandos de lectura admiten `--json`.
+`mora status` (y `mora st`) ahora muestra el estado de tareas y ejecuciones; usa `mora dashboard` para el resumen anterior del proyecto.
 
 ---
 

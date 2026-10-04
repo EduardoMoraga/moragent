@@ -93,6 +93,14 @@ export const COMMANDS = [
     group: 'agents',
   },
   {
+    name: 'estado',
+    aliases: ['status'],
+    args: '[id]',
+    es: 'estado local de tareas y próxima acción (solo lectura)',
+    en: 'local task health and next action (read-only)',
+    group: 'agents',
+  },
+  {
     name: 'sesiones',
     aliases: ['sessions'],
     args: '',

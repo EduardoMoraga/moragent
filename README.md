@@ -177,11 +177,13 @@ mora spec status                                  # check spec phases
 mora dispatch backend "Orders API" --spec <slug>  # dispatch a task to the bus
 mora wait T-0001                                  # wait until task is completed
 mora board                                        # terminal kanban board
+mora status [T-0001] --json                       # read-only local task/run health and next action
 mora memory add "Use UUIDv7" --tier canonical     # add an architectural decision
 mora brain link                                   # link with Obsidian vault
 ```
 
 Every read command accepts `--json`.
+`mora status` (and `mora st`) now shows task/run health; use `mora dashboard` for the former project overview.
 
 ---
 

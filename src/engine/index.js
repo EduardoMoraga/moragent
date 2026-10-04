@@ -2,13 +2,15 @@ import path from 'node:path';
 import { dirs, findRoot } from '../core/paths.js';
 import { loadConfig, saveConfig, defaultConfig, PRESETS } from '../core/config.js';
 import fs from 'node:fs';
-import { listFiles, writeText, ensureDir } from '../core/fsx.js';
+import { listFiles, writeText, ensureDir, nowISO } from '../core/fsx.js';
 import { detectLang, setLang, t } from '../core/i18n.js';
 import { syncProject } from '../core/sync.js';
 import { installHooks } from '../core/hooks.js';
 import { refreshBrain } from '../core/brain-refresh.js';
 import { createTask, updateTask, getTask } from '../bus/tasks.js';
 import { buildEnvelope } from '../bus/envelope.js';
+import { readStatus } from '../bus/status.js';
+import { formatStatus } from '../commands/status.js';
 import { createStore } from './store.js';
 import { extractPlan, stripPlan, assignProviders } from './plan.js';
 import { orchestratorSystem, turnPrompt, reviewPrompt } from './prompts.js';
@@ -259,7 +261,12 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     }
     const envelope = await buildEnvelope({ root, task, config, exitProtocol: false });
     writeText(path.join(dirs(root).tasks, `${task.id}.md`), envelope);
-    updateTask(root, task.id, { status: 'running' });
+    const logFile = path.join(dirs(root).runs, `${task.role}-${task.id}.log`);
+    const execution = {
+      mode: 'engine', handle: `pid:${process.pid}`, pid: process.pid,
+      provider: planTask.provider, logFile, updatedAt: nowISO(),
+    };
+    updateTask(root, task.id, { status: 'running', execution });
     store.setAgent(task.id, { status: 'running', startedAt: new Date().toISOString(), lastLine: t('empezando…', 'starting…') });
     const ac = new AbortController();
     controllers.add(ac);
@@ -268,9 +275,12 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
     try {
       res = await p.run({
         root, prompt: envelope, autonomy: member.autonomy || 'auto', model: member.model, signal: ac.signal,
-        logFile: path.join(dirs(root).runs, `${task.role}-${task.id}.log`),
+        logFile,
         onEvent: (e) => {
-          if (e.type === 'start') store.setAgent(task.id, { ...(e.sessionId ? { sessionId: e.sessionId } : {}), ...(e.model ? { model: e.model } : {}) });
+          if (e.type === 'start') {
+            store.setAgent(task.id, { ...(e.sessionId ? { sessionId: e.sessionId } : {}), ...(e.model ? { model: e.model } : {}) });
+            if (e.sessionId) updateTask(root, task.id, { execution: { ...execution, sessionId: e.sessionId, updatedAt: nowISO() } });
+          }
           if (e.type === 'text') text += e.delta;
           const cur = store.state.agents[task.id];
           const line = lastLineFrom(e, cur?.lastLine);
@@ -540,6 +550,12 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
           : t('Todavía no hay agentes en esta sesión.', 'No agents in this session yet.') });
         return;
       }
+      case 'estado': case 'status': {
+        store.addMessage({ from: 'system', text: root
+          ? formatStatus(readStatus(root, list[0] || null, { config }))
+          : t('No hay proyecto MORAGENT en esta carpeta.', 'No MORAGENT project in this folder.') });
+        return;
+      }
       case 'nuevo': case 'new': {
         // Start a separate project in the current folder instead of the one found above it.
         if (root && path.resolve(root) === path.resolve(cwd)) { store.addMessage({ from: 'system', text: t('Esta carpeta ya es el proyecto actual.', 'This folder already is the current project.') }); return; }
@@ -607,6 +623,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /nuevo            crear un proyecto nuevo en esta carpeta
 /sesiones         ver conversaciones guardadas · /sesion <n> retomar · /limpiar empezar de cero
 /agentes          estado de los subagentes (Tab: detalle de cada proceso)
+/estado [id]      estado local de tareas y próxima acción (solo lectura)
 /plan <texto>     pedir un plan explícito
 /abrir <rol|id>   sacar un subagente a un panel externo
 /cancel           cancelar lo que está corriendo
@@ -620,6 +637,7 @@ export async function createEngine({ root = findRoot(), config = null, cwd = pro
 /new              create a new project in this folder
 /sessions         saved conversations · /session <n> resume · /clear start fresh
 /agents           subagent status (Tab: each process in detail)
+/status [id]      local task health and next action (read-only)
 /plan <text>      ask for an explicit plan
 /open <role|id>   take a subagent out into a terminal pane
 /cancel           cancel running work

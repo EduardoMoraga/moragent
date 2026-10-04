@@ -142,7 +142,7 @@ test('dashboard --json in a temp project', async () => {
   scaffold(root, { ...defaultConfig({ project: 'demo', lang: 'en', preset: 'duo' }), goal: 'Ship the demo' });
   const d = path.join(root, '.moragent');
   writeJSON(path.join(d, 'tasks', 'T-0001.json'), TASKS[0]);
-  writeJSON(path.join(d, 'tasks', 'T-0002.json'), TASKS[2]);
+  writeJSON(path.join(d, 'tasks', 'T-0003.json'), TASKS[2]);
   fs.writeFileSync(path.join(d, 'memory', 'episodic', '2026-09-27-x.md'), '---\ntitle: x\n---\nbody\n');
   const { code, text } = await capture(() => dashboard.run({ _: [], flags: {} }, { root, json: true }));
   assert.equal(code, 0);
