@@ -124,13 +124,13 @@ test('inline typing and redraw preserve draft; paste and newline do not send', a
   store.state.messages.push({ id: 'status', from: 'system', text: 'status changed' });
   store.emit('change');
   await new Promise((resolve) => setTimeout(resolve, 80));
-  assert.ok(plain(written.slice(written.lastIndexOf('\x1b[J'))).includes('ordinary draft'));
+  assert.ok(plain(written.slice(written.lastIndexOf('\x1b[2K'))).includes('ordinary draft'));
 
   input.write('\x1b[200~first line\r\nsecond line\x1b[201~');
   input.write('\nthird line');
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.deepEqual(sent, []);
-  let visible = plain(written.slice(written.lastIndexOf('\x1b[J')));
+  let visible = plain(written.slice(written.lastIndexOf('\x1b[2K')));
   assert.ok(visible.includes('first line'));
   assert.ok(visible.includes('second line'));
   assert.ok(visible.includes('third line'));
@@ -138,7 +138,7 @@ test('inline typing and redraw preserve draft; paste and newline do not send', a
   output.columns = 36;
   output.emit('resize');
   await new Promise((resolve) => setTimeout(resolve, 80));
-  visible = plain(written.slice(written.lastIndexOf('\x1b[J')));
+  visible = plain(written.slice(written.lastIndexOf('\x1b[2K')));
   assert.ok(visible.includes('ordinary draft'));
   assert.ok(visible.includes('third line'));
   assert.deepEqual(sent, []);
@@ -171,7 +171,7 @@ test('split bracketed paste markers keep a multiline draft editable', async () =
   input.write('ta\x1b[20');
   input.write('1~');
   assert.deepEqual(sent, []);
-  assert.ok(plain(written.slice(written.lastIndexOf('\x1b[J'))).includes('beta'));
+  assert.ok(plain(written.slice(written.lastIndexOf('\x1b[2K'))).includes('beta'));
   input.write('\r');
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.deepEqual(sent, ['alpha\nbeta']);
@@ -197,7 +197,7 @@ test('pasted tabs survive draft editing and send unchanged', async () => {
   input.write('\x1b');
   input.write('\x7f');
   await new Promise((resolve) => setTimeout(resolve, 60));
-  const visible = plain(written.slice(written.lastIndexOf('\x1b[J')));
+  const visible = plain(written.slice(written.lastIndexOf('\x1b[2K')));
   assert.ok(visible.includes('name  qty'));
   assert.ok(!visible.includes('\t'));
   input.write('\r');
@@ -245,4 +245,69 @@ test('runInline prints updated message once when it becomes final and picker nav
   input.write('\u0003'); // second one exits
   await p;
   assert.equal(input.isRaw, false);
+});
+
+// Minimal tmux-like screen: clearing to end of screen from the home position moves the
+// visible screen into history (tmux scroll-on-clear), and shrinking the height pushes the
+// rows above the cursor into history.
+function virtualTerminal(rows) {
+  const term = { rows, screen: Array.from({ length: rows }, () => ''), cx: 0, cy: 0, history: 0 };
+  const scroll = () => { term.history += 1; term.screen.shift(); term.screen.push(''); };
+  term.write = (data) => {
+    for (let i = 0; i < data.length; i += 1) {
+      const ch = data[i];
+      if (ch === '\x1b' && data[i + 1] === '[') {
+        const m = /^\x1b\[([?\d;]*)([A-Za-z~])/.exec(data.slice(i));
+        if (!m) continue;
+        i += m[0].length - 1;
+        const n = Number(m[1]) || 0;
+        if (m[2] === 'A') term.cy = Math.max(0, term.cy - (n || 1));
+        else if (m[2] === 'K' && n === 2) term.screen[term.cy] = '';
+        else if (m[2] === 'J') {
+          if (term.cx === 0 && term.cy === 0) term.history += term.screen.filter(Boolean).length;
+          term.screen[term.cy] = term.screen[term.cy].slice(0, term.cx);
+          for (let r = term.cy + 1; r < term.rows; r += 1) term.screen[r] = '';
+        }
+      } else if (ch === '\r') term.cx = 0;
+      else if (ch === '\n') { term.cx = 0; if (term.cy === term.rows - 1) scroll(); else term.cy += 1; }
+      else { term.screen[term.cy] = term.screen[term.cy].padEnd(term.cx).slice(0, term.cx) + ch; term.cx += 1; }
+    }
+  };
+  term.resize = (next) => {
+    while (term.rows > next) {
+      if (term.cy < term.rows - 1 && !term.screen[term.rows - 1]) term.screen.pop();
+      else { term.history += 1; term.screen.shift(); term.cy -= 1; }
+      term.rows -= 1;
+    }
+  };
+  return term;
+}
+
+test('redraws after shrinking the terminal height keep native scrollback clean', async () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.setRawMode = () => {};
+  const output = new PassThrough();
+  output.isTTY = true;
+  output.columns = 40;
+  output.rows = 14;
+  const term = virtualTerminal(14);
+  output.write = (chunk) => { term.write(String(chunk)); return true; };
+  const store = new EventEmitter();
+  store.state = sampleState();
+  const done = runInline({ engine: { store, async send() {}, stop() {} }, input, output });
+  input.write('a long draft that wraps across several composer rows '.repeat(3));
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  term.resize(10);
+  output.rows = 10;
+  output.emit('resize');
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const history = term.history;
+  for (let i = 0; i < 10; i += 1) input.write('x');
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(term.history, history);
+  input.write('\x03');
+  input.write('\x03');
+  await done;
 });

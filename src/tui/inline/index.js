@@ -43,8 +43,9 @@ export async function runInline({ engine, input = process.stdin, output = proces
   // One column of slack so a full-width line never triggers the terminal's auto-wrap.
   const cols = () => Math.max(20, (output.columns || 80) - 1);
   const eraseLive = () => {
-    // The cursor sits on the last live row: go to column 0, up to the first live row, clear below.
-    if (liveRows > 0) output.write(`\r${liveRows > 1 ? `\x1b[${liveRows - 1}A` : ''}\x1b[J`);
+    // The cursor sits on the last live row: clear each row while moving up to the first one.
+    // Row-by-row clears avoid erase-below from the home position, which tmux moves into scrollback.
+    if (liveRows > 0) output.write(`\r\x1b[2K${'\x1b[1A\x1b[2K'.repeat(liveRows - 1)}`);
     liveRows = 0;
   };
   const writeBlock = (lines) => { if (lines.length) output.write(lines.join('\n') + '\n'); };
