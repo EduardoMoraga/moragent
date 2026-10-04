@@ -149,7 +149,52 @@ function statusLine(state, ui, cols) {
   return c.gray(clip(`${o.provider || '-'}${model ? ` · ${model}` : ''} · ${busy === 0 ? tr(state, 'sin agentes activos', 'no agents running') : `${busy} ${busy === 1 ? tr(state, 'agente trabajando', 'agent working') : tr(state, 'agentes trabajando', 'agents working')}`} · /help`, cols));
 }
 
-export function renderLive(state = {}, ui = {}, { cols = 80 } = {}) {
+function composerLines(ui, cols, maxRows) {
+  const inner = Math.max(1, cols - 4);
+  const input = String(ui.input || '');
+  const cursor = Math.max(0, Math.min(input.length, ui.cursor ?? input.length));
+  const marked = input.slice(0, cursor) + '\0' + input.slice(cursor);
+  const rows = [];
+  let cursorRow = 0;
+  let first = true;
+  for (const logical of marked.split('\n')) {
+    let rest = logical;
+    do {
+      const prefix = first ? '> ' : '  ';
+      const size = Math.max(1, inner - prefix.length);
+      const chunk = rest.slice(0, size);
+      if (chunk.includes('\0')) cursorRow = rows.length;
+      rows.push(prefix + chunk.replace('\0', '_'));
+      rest = rest.slice(size);
+      first = false;
+    } while (rest);
+  }
+  const start = Math.max(0, Math.min(cursorRow - Math.floor(maxRows / 2), rows.length - maxRows));
+  const end = Math.min(rows.length, start + maxRows);
+  const topHint = start ? ` ↑${start} ` : '';
+  const bottomHint = end < rows.length ? ` ↓${rows.length - end} ` : '';
+  const border = `╭${topHint}${'─'.repeat(cols - 2 - topHint.length)}╮`;
+  const bottom = `╰${bottomHint}${'─'.repeat(cols - 2 - bottomHint.length)}╯`;
+  return [border, ...rows.slice(start, end).map((row) => `│ ${clip(row, inner)} │`), bottom];
+}
+
+function controlsLines(state, cols) {
+  const controls = [
+    tr(state, 'Enter enviar', 'Enter send'),
+    tr(state, 'Ctrl+J salto', 'Ctrl+J newline'),
+    tr(state, 'Ctrl+C limpiar', 'Ctrl+C clear'),
+    '/help',
+  ];
+  const lines = [];
+  for (const control of controls) {
+    const last = lines.length - 1;
+    if (last >= 0 && width(lines[last]) + width(control) + 3 <= cols) lines[last] += ` · ${control}`;
+    else lines.push(control);
+  }
+  return lines.map((line) => c.gray(line));
+}
+
+export function renderLive(state = {}, ui = {}, { cols = 80, rows = 24 } = {}) {
   const w = Math.max(20, cols | 0);
   const out = [];
   if (ui.showWelcome) out.push(...welcomeLines(state, { cols: w }));
@@ -165,7 +210,8 @@ export function renderLive(state = {}, ui = {}, { cols = 80 } = {}) {
   }
   out.push(...renderPicker(ui, state, w));
   out.push(...renderMenu(ui, state, w));
-  if (!ui.picker && !(ui.menu || (ui.input || '').startsWith('/'))) out.push(`╭${'─'.repeat(Math.max(0, Math.min(w, 72) - 2))}╮`, `│ ${clip(`> ${ui.input || ''}_`, Math.min(w, 72) - 4)} │`, `╰${'─'.repeat(Math.max(0, Math.min(w, 72) - 2))}╯`);
+  out.push(...composerLines(ui, w, Math.max(3, Math.floor(rows * 0.4))));
+  out.push(...controlsLines(state, w));
   out.push(statusLine(state, ui, w));
   return out.flatMap((l) => width(l) <= w ? [l] : wrapText(l, w));
 }

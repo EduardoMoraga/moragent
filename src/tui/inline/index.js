@@ -1,5 +1,6 @@
 import { c, plain } from '../../core/log.js';
-import { LineEditor, decodeKeys } from '../input.js';
+import { LineEditor } from '../input.js';
+import { InlineInputDecoder } from './input.js';
 import { renderLive, renderFinal, visualRows, filterCommands } from './render.js';
 import { COMMANDS as REGISTRY, welcomeLines } from '../../engine/commands.js';
 
@@ -26,12 +27,15 @@ function findAgent(state, ref) {
 
 export async function runInline({ engine, input = process.stdin, output = process.stdout }) {
   const editor = new LineEditor({ commands: DEFAULT_COMMANDS.flatMap((x) => [x.name, ...(x.aliases || [])]) });
+  const decoder = new InlineInputDecoder();
   const ui = { input: '', showAgents: false, commands: DEFAULT_COMMANDS, menu: null, picker: null, showWelcome: false };
   const printed = new Set();
   let liveRows = 0;
   let closed = false;
   let timer = null;
+  let escapeTimer = null;
   let wasRaw = false;
+  const bracketedPaste = Boolean(output.isTTY);
   let lastCtrlC = 0;
   let printedWelcome = false;
 
@@ -48,8 +52,9 @@ export async function runInline({ engine, input = process.stdin, output = proces
     if (closed) return;
     eraseLive();
     ui.input = editor.value;
+    ui.cursor = editor.cursor;
     ui.menu = editor.value.startsWith('/') ? { ...(ui.menu || {}), items: filterCommands(editor.value, ui.commands) } : null;
-    const lines = renderLive(state(), ui, { cols: cols() });
+    const lines = renderLive(state(), ui, { cols: cols(), rows: output.rows || 24 });
     output.write(lines.join('\n'));
     liveRows = visualRows(lines, cols());
   };
@@ -79,8 +84,9 @@ export async function runInline({ engine, input = process.stdin, output = proces
     if (closed) return;
     closed = true;
     if (timer) clearTimeout(timer);
+    if (escapeTimer) clearTimeout(escapeTimer);
     eraseLive();
-    output.write('\x1b[?25h');
+    output.write(`${bracketedPaste ? '\x1b[?2004l' : ''}\x1b[?25h`);
     if (input.isTTY && input.setRawMode) input.setRawMode(Boolean(wasRaw));
     input.pause?.();
     input.off?.('data', onData);
@@ -150,8 +156,10 @@ export async function runInline({ engine, input = process.stdin, output = proces
     if (['/modelo', '/model'].includes(slash) && rest.length === 1 && engine.roleEngine?.(rest[0])) { const e = engine.roleEngine(rest[0]); openModelPicker('model-role', e, `modelo · ${rest[0]} (${e})`, { role: rest[0] }); return; }
     await engine.command(cmd, rest);
   }
-  async function onData(buf) {
-    for (const key of decodeKeys(buf)) {
+  async function handleKeys(keys) {
+    for (const key of keys) {
+      if (key.name === 'paste') { ui.picker = null; editor.insert(key.value); redraw(); continue; }
+      if (key.name === 'newline') { editor.insert('\n'); redraw(); continue; }
       if (ui.picker) {
         if (key.name === 'escape') ui.picker = null;
         else if (key.name === 'up') ui.picker.selected = Math.max(0, (ui.picker.selected || 0) - 1);
@@ -191,8 +199,19 @@ export async function runInline({ engine, input = process.stdin, output = proces
       redraw();
     }
   }
+  async function onData(buf) {
+    if (escapeTimer) { clearTimeout(escapeTimer); escapeTimer = null; }
+    await handleKeys(decoder.push(buf));
+    if (decoder.waitingForEscape) {
+      escapeTimer = setTimeout(() => {
+        escapeTimer = null;
+        if (!closed) void handleKeys(decoder.flushEscape());
+      }, 40);
+    }
+  }
 
   if (input.isTTY && input.setRawMode) { wasRaw = input.isRaw; input.setRawMode(true); input.resume(); }
+  if (bracketedPaste) output.write('\x1b[?2004h');
   output.write('\x1b[?25h');
   input.on?.('data', onData); output.on?.('resize', onResize); engine.store?.on?.('change', onChange);
   process.once('SIGINT', onSig); process.once('SIGTERM', onSig);

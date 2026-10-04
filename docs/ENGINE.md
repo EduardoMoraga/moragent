@@ -188,7 +188,9 @@ Rules:
   lives in the terminal's own scrollback (native scroll, selection, copy; it stays after exit).
 - A **live region** at the bottom is redrawn in place (cursor up + clear, no flicker, throttle ~20 fps):
   streaming orchestrator text (last ~8 lines while streaming; the full text is printed when it ends), one line per
-  running agent (role · engine · id · elapsed · last activity), the input box, menus/pickers, and a status line.
+  running agent (role · engine · id · elapsed · last activity), a full-width wrapped draft box, menus/pickers, and a
+  status line. Long drafts use a bounded viewport around the editing cursor. The draft is rendered again after
+  status updates and resize.
 - Printing rule: when something becomes final (user message, orchestrator answer, system message, agent end)
   the live region is erased, the final block is printed (markdown-rendered), then the live region is redrawn.
 - **Slash menu**: typing `/` shows matching commands with a one-line description (↑/↓ select, Tab/Enter
@@ -198,7 +200,13 @@ Rules:
   Esc; a free-text row "otro…" lets the user type any model id.
 - **Tab** toggles the agents detail in the live region (last 6 log lines per running agent). `/agentes <rol|id>`
   prints that agent's full log to the scrollback.
-- Ctrl+C: first cancels running work, second (within 2 s) exits. Resize: redraw live region only.
+- **Composer**: Enter explicitly sends; Ctrl+J (or Shift+Enter where the terminal reports it) inserts a newline.
+  Multi-line bracketed paste stays in the editable draft and never sends. The visible hint lists send, newline,
+  clear, and `/help`. Ctrl+C clears a nonempty draft; Esc clears it when no picker is open. With an empty draft,
+  Ctrl+C cancels running work or exits.
+  Resize redraws the live region without changing the draft. Terminal scrollback keeps finalized messages.
+- A future richer composer can add vertical cursor navigation and selection; this inline viewport deliberately keeps
+  native scrollback and follows the current insertion cursor instead of replacing the terminal screen.
 
 ### 7a. TUI inline — `src/tui/inline/*` (owner: dev/Pi)
 `runInline({ engine, input = process.stdin, output = process.stdout }) -> Promise<void>`.
