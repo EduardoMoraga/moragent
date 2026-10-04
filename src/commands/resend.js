@@ -8,6 +8,7 @@ import { writeEnvelope } from '../bus/envelope.js';
 import { getAdapter } from '../crew/adapters.js';
 import { loadPanes } from '../crew/panes.js';
 import { ensureShim } from '../core/shim.js';
+import { nowISO } from '../core/fsx.js';
 import { getMux } from '../mux/index.js';
 import { assertPaneReady } from './dispatch.js';
 
@@ -46,9 +47,10 @@ export default {
     const prompt = cfg.lang === 'en'
       ? `Read and execute .moragent/tasks/${task.id}.md`
       : `Lee y ejecuta .moragent/tasks/${task.id}.md`;
+    const member = cfg.crew?.[task.role] || {};
+    let execution;
     if (mux.name === 'headless') {
       ensureShim(root);
-      const member = cfg.crew?.[task.role] || {};
       const adapter = getAdapter(pane.cli || member.cli);
       mux.send(pane.handle, prompt, {
         root,
@@ -60,8 +62,9 @@ export default {
       });
     } else {
       mux.send(pane.handle, prompt);
+      execution = { mode: 'pane', mux: mux.name, handle: pane.handle, provider: pane.cli || member.cli, updatedAt: nowISO() };
     }
-    const resent = task.status === 'sent' ? task : updateTask(root, task.id, { status: 'sent' });
+    const resent = updateTask(root, task.id, { status: 'sent', execution });
     if (ctx.json) json({ ok: true, task: resent, envelope, mux: mux.name });
     else ok(t(`${task.id} reenviada a ${task.role} vía ${mux.name}.`, `${task.id} resent to ${task.role} via ${mux.name}.`));
     return 0;

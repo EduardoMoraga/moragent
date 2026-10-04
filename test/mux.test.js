@@ -436,6 +436,22 @@ test('dispatch records the live pane handle but does not claim a sent task is ru
   assert.equal(observed.run.alive, true);
 });
 
+test('resend replaces stale pane execution evidence with the recovered pane', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-resend-status-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const task = createTask({ root, role: 'backend', body: 'Recover me' });
+  updateTask(root, task.id, { status: 'sent', execution: { mode: 'pane', mux: 'tmux', handle: '%1', provider: 'codex' } });
+  savePanes(root, { backend: { mux: 'tmux', handle: '%7', cli: 'codex' } });
+  setExec(() => ({ code: 0, stdout: '%7\n', stderr: '' }));
+  const cfg = { lang: 'en', crew: { backend: { cli: 'codex' } } };
+  await resendCommand.run({ _: [task.id], flags: {} }, { root, config: cfg, json: false });
+  assert.equal(getTask(root, task.id).execution.handle, '%7');
+  const observed = readStatus(root, task.id, { config: cfg }).tasks[0];
+  assert.equal(observed.status, 'sent');
+  assert.equal(observed.run.handle, '%7');
+  assert.equal(observed.run.alive, true);
+});
+
 test('resend checks readiness and resends a queued task to its live role pane', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mora-resend-'));
   const task = createTask({ root, role: 'backend', body: 'Implement the retry' });
