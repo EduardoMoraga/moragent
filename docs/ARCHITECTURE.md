@@ -198,6 +198,11 @@ re-sends queued/sent tasks to the registered live pane. The envelope contains: m
 excerpt, relevant memory (from `memory.contextPack`), acceptance criteria, and the exit protocol:
 `mora done T-0001 --summary "…" [--files a,b]` or `mora block T-0001 --reason "…"`.
 
+Dispatch, resend and the engine record optional execution evidence on the task as `execution`
+(`mode`, `handle`, `mux`/`pid`, `provider`, `updatedAt`). `src/bus/status.js#readStatus` projects it
+(falling back to `.moragent/runs/headless.json`) into `mora status`, read-only: when evidence is
+missing or the pane/process is not live it reports `unknown` with a next action, never retrying.
+
 ```js
 createTask({ root, title, role, body, spec, by }) -> task
 getTask(root, id)  listTasks(root, { status, role })  updateTask(root, id, patch)
