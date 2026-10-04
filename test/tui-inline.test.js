@@ -58,6 +58,14 @@ test('very long drafts keep the cursor in a bounded visible viewport', () => {
   assert.ok(plain(top.join('\n')).includes('↓'));
 });
 
+test('composer wraps astral characters without splitting surrogate pairs', () => {
+  const draft = `${'a'.repeat(35)}${'🧭'.repeat(20)}`;
+  const lines = renderLive(sampleState(), { input: draft, cursor: draft.length }, { cols: 42, rows: 40 });
+  const text = plain(lines.join('\n'));
+  assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text));
+  assert.equal((text.match(/🧭/g) || []).length, 20);
+});
+
 test('inline input decoder preserves split UTF-8 and distinguishes Shift+Enter from send', () => {
   const decoder = new InlineInputDecoder();
   const emoji = Buffer.from('🧭');
@@ -76,7 +84,11 @@ test('inline input decoder treats Meta chords as keys, never as a draft-clearing
   assert.deepEqual(decoder.push('\x1b'), []);
   assert.deepEqual(decoder.flushEscape(), [{ name: 'escape' }]);
   assert.deepEqual(decoder.push('\x1b'), []);
-  assert.deepEqual(decoder.push('/'), [{ name: 'escape' }, { name: 'text', value: '/' }]);
+  assert.deepEqual(decoder.push('/'), [{ name: 'unknown', raw: '\x1b/' }]);
+  assert.deepEqual(decoder.push('\x1b'), []);
+  assert.deepEqual(decoder.push('\x7f'), [{ name: 'unknown', raw: '\x1b\x7f' }]);
+  assert.deepEqual(decoder.push('\x1b'), []);
+  assert.deepEqual(decoder.push('\r'), [{ name: 'newline' }]);
 });
 
 test('live region stays within terminal height while streaming with agents and a long draft', () => {
@@ -182,7 +194,8 @@ test('pasted tabs survive draft editing and send unchanged', async () => {
   const done = runInline({ engine: { store, async send(value) { sent.push(value); }, stop() {} }, input, output });
   input.write('\x1b[200~name\tqty\nfoo\t2\x1b[201~');
   input.write('X\x7f');
-  input.write('\x1b\x7f');
+  input.write('\x1b');
+  input.write('\x7f');
   await new Promise((resolve) => setTimeout(resolve, 60));
   const visible = plain(written.slice(written.lastIndexOf('\x1b[J')));
   assert.ok(visible.includes('name  qty'));
@@ -220,6 +233,7 @@ test('runInline prints updated message once when it becomes final and picker nav
   assert.ok(plain(written).includes('/tarea'));
   assert.deepEqual(calls, []);
   input.write('\u001b');
+  await new Promise((r) => setTimeout(r, 60));
   input.write('/tarea\r');
   await new Promise((r) => setTimeout(r, 30));
   assert.ok(plain(written).includes('rol para /tarea'));

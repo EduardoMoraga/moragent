@@ -31,7 +31,7 @@ export class InlineInputDecoder {
 
   push(chunk) {
     const text = Buffer.isBuffer(chunk) ? this.utf8.write(chunk) : String(chunk);
-    const keys = text && !'[O'.includes(text[0]) ? this.flushEscape() : [];
+    const keys = [];
     this.pending += text;
     while (this.pending) {
       if (this.pasting) {

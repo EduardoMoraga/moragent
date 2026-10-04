@@ -162,10 +162,12 @@ function composerLines(ui, cols, maxRows) {
     do {
       const prefix = first ? '> ' : '  ';
       const size = Math.max(1, inner - prefix.length);
-      const chunk = rest.slice(0, size);
+      let cut = Math.min(size, rest.length);
+      if (cut < rest.length && /[\uD800-\uDBFF]/.test(rest[cut - 1])) cut = cut > 1 ? cut - 1 : 2;
+      const chunk = rest.slice(0, cut);
       if (chunk.includes('\0')) cursorRow = rows.length;
       rows.push(prefix + chunk.replace('\0', '_'));
-      rest = rest.slice(size);
+      rest = rest.slice(cut);
       first = false;
     } while (rest);
   }
