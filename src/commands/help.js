@@ -28,6 +28,7 @@ export default {
       return 0;
     }
     out(`${c.brand(c.bold('MORAGENT'))} ${c.dim('v' + version())} — ${t('orquestador ejecutivo para desarrollo agéntico', 'the executive orchestrator for agentic development')}`);
+    out(c.dim(t('  mora abre el harness interactivo · mora help muestra los comandos', '  mora opens the interactive harness · mora help lists commands')));
     out(c.dim(`  mora <${t('comando', 'command')}> [--json] [--lang es|en]`));
     for (const [g, label] of GROUPS) {
       const list = mods.filter((m) => (m.group || 'system') === g);

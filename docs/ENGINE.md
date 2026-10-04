@@ -20,7 +20,7 @@ $ moragent
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-- `moragent` (TTY, no args) → full-screen TUI. `mora <cmd>` keeps working for scripts/agents.
+- `mora` or `moragent` (TTY, no args) → interactive chat harness. Without a TTY, no-arg launch fails instead of showing the dashboard. `mora help` lists commands; `mora <cmd>` keeps working for scripts/agents.
 - First run in a folder without `.moragent/` → the TUI runs init inline (asks goal, creates project).
 - `/login` → provider screen: detected subscriptions (logged in or not + how to log in) and API
   keys (add/remove). No MORAGENT account, no server.

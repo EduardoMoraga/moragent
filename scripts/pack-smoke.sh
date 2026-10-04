@@ -99,6 +99,14 @@ mora spec new x >/dev/null
 mora memory add "a" --body b >/dev/null
 mora board >/dev/null
 mora help >/dev/null
+for app in mora moragent; do
+  set +e
+  "$app" >"$TMP/$app-stdout" 2>"$TMP/$app-stderr"
+  LAUNCH_CODE=$?
+  set -e
+  test "$LAUNCH_CODE" -eq 1
+  grep -Eq 'interactive terminal|terminal interactiva' "$TMP/$app-stderr"
+done
 mora resend --help >/dev/null
 mora sync --hooks --dry-run >/dev/null
 mora up --dry-run --json > up-dry.json

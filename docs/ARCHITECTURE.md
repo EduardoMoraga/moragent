@@ -289,7 +289,9 @@ project-scoped hooks unless `--no-hooks` is passed.
 ## 14. User-facing commands (target surface)
 
 ```
-mora                                      wizard if no project, dashboard if there is one
+mora / moragent                           interactive chat harness; requires a terminal
+mora help                                 list explicit commands
+mora dashboard                            project overview (explicit command)
 mora init [--preset squad] [--lang es] [--yes] [--no-hooks]
 mora doctor [--json]                      CLIs, auth hints, multiplexers, hooks, vault, project
 mora plan "<idea>"                        scope sizing → preset + first spec
