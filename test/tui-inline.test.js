@@ -67,6 +67,30 @@ test('inline input decoder preserves split UTF-8 and distinguishes Shift+Enter f
   assert.deepEqual(decoder.push('\r'), [{ name: 'enter' }]);
 });
 
+test('inline input decoder treats Meta chords as keys, never as a draft-clearing Escape', () => {
+  const decoder = new InlineInputDecoder();
+  assert.deepEqual(decoder.push('\x1b\x7f'), [{ name: 'unknown', raw: '\x1b\x7f' }]);
+  assert.deepEqual(decoder.push('\x1b\r'), [{ name: 'newline' }]);
+  assert.deepEqual(decoder.push('\x1bd'), [{ name: 'unknown', raw: '\x1bd' }]);
+  assert.deepEqual(decoder.push('\x1bb'), [{ name: 'word-left' }]);
+  assert.deepEqual(decoder.push('\x1b'), []);
+  assert.deepEqual(decoder.flushEscape(), [{ name: 'escape' }]);
+  assert.deepEqual(decoder.push('\x1b'), []);
+  assert.deepEqual(decoder.push('/'), [{ name: 'escape' }, { name: 'text', value: '/' }]);
+});
+
+test('live region stays within terminal height while streaming with agents and a long draft', () => {
+  const state = sampleState();
+  state.messages.push({ id: 'live', from: 'orchestrator', streaming: true, text: Array.from({ length: 20 }, (_, i) => `stream line ${i}`).join('\n\n') });
+  for (let i = 0; i < 3; i++) state.agents[`a${i}`] = { id: `T-${i}`, role: 'backend', provider: 'codex', status: 'running', taskId: `T-${i}`, log: [{ kind: 'text', text: 'working' }] };
+  const draft = `START ${'long prompt '.repeat(300)} END`;
+  for (const rows of [12, 24, 40]) {
+    const lines = renderLive(state, { input: draft, cursor: draft.length, showAgents: true }, { cols: 42, rows });
+    assert.ok(visualRows(lines, 42) < rows, `rows=${rows} got ${visualRows(lines, 42)}`);
+    assert.ok(plain(lines.join('\n')).includes('END_'));
+  }
+});
+
 test('inline typing and redraw preserve draft; paste and newline do not send', async () => {
   const input = new PassThrough();
   input.isTTY = true;
@@ -139,6 +163,33 @@ test('split bracketed paste markers keep a multiline draft editable', async () =
   input.write('\r');
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.deepEqual(sent, ['alpha\nbeta']);
+  input.write('\x03');
+  await done;
+});
+
+test('pasted tabs survive draft editing and send unchanged', async () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.setRawMode = () => {};
+  const output = new PassThrough();
+  output.isTTY = true;
+  output.columns = 60;
+  let written = '';
+  output.write = (chunk) => { written += String(chunk); return true; };
+  const store = new EventEmitter();
+  store.state = sampleState();
+  const sent = [];
+  const done = runInline({ engine: { store, async send(value) { sent.push(value); }, stop() {} }, input, output });
+  input.write('\x1b[200~name\tqty\nfoo\t2\x1b[201~');
+  input.write('X\x7f');
+  input.write('\x1b\x7f');
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const visible = plain(written.slice(written.lastIndexOf('\x1b[J')));
+  assert.ok(visible.includes('name  qty'));
+  assert.ok(!visible.includes('\t'));
+  input.write('\r');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(sent, ['name\tqty\nfoo\t2']);
   input.write('\x03');
   await done;
 });

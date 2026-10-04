@@ -26,7 +26,7 @@ An 80-column PTY reproduction showed that ordinary text appears, but a long draf
 - Baseline PTY reproduction: ordinary draft shown; long draft ellipsized; bracketed paste dropped.
 - Regression tests first failed on clipping and paste submission, then passed after implementation.
 - Verification: focused tests 16/16; full `npm test` 211/211; `npm run build` passed; `npm run pack:smoke` passed; `git diff --check` passed; PTY showed wrapped draft and paste; `--help` still exits 0 and noninteractive no-arg still rejects input with exit 1.
-- Implementation: a bounded draft viewport follows the cursor, keeping the live region smaller than the terminal for long prompts. Bracketed paste is enabled only during inline TUI lifetime and decoded across data chunks.
+- Implementation: a bounded draft viewport follows the cursor, and the whole live region (stream, agents, menus, composer, hints) is budgeted to stay within the terminal height. Pasted tabs are kept in the draft and expanded only for display; Meta chords never act as Escape. Bracketed paste is enabled only during inline TUI lifetime and decoded across data chunks.
 - Follow-up: a richer composer could add vertical navigation and selection while retaining native scrollback.
 - Work-unit commit: `a0883be` (`fix(tui): keep long and pasted drafts visible`).
 - Next: Firstmate-owned no-mistakes validation and PR handoff.

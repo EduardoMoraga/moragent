@@ -8,7 +8,6 @@ function cleanPaste(value) {
   return value
     .replace(/\r\n?/g, '\n')
     .replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))?/g, '')
-    .replace(/\t/g, '  ')
     .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
 }
 
@@ -31,8 +30,9 @@ export class InlineInputDecoder {
   }
 
   push(chunk) {
-    this.pending += Buffer.isBuffer(chunk) ? this.utf8.write(chunk) : String(chunk);
-    const keys = [];
+    const text = Buffer.isBuffer(chunk) ? this.utf8.write(chunk) : String(chunk);
+    const keys = text && !'[O'.includes(text[0]) ? this.flushEscape() : [];
+    this.pending += text;
     while (this.pending) {
       if (this.pasting) {
         const content = this.paste + this.pending;
@@ -65,10 +65,15 @@ export class InlineInputDecoder {
           this.pending = this.pending.slice(sequence.length);
           continue;
         }
-        if (this.pending[1] === 'O' && this.pending.length < 3) break;
-        const length = this.pending[1] === 'O' ? 3 : /[bf]/.test(this.pending[1]) ? 2 : 1;
-        keys.push(decodeKey(this.pending.slice(0, length)));
-        this.pending = this.pending.slice(length);
+        if (this.pending[1] === 'O') {
+          if (this.pending.length < 3) break;
+          keys.push(decodeKey(this.pending.slice(0, 3)));
+          this.pending = this.pending.slice(3);
+          continue;
+        }
+        const meta = this.pending[1] === '\x1b' ? '\x1b' : '\x1b' + String.fromCodePoint(this.pending.codePointAt(1));
+        keys.push(/^\x1b[\r\n]$/.test(meta) ? { name: 'newline' } : /^\x1b[bf]$/.test(meta) ? decodeKey(meta) : { name: 'unknown', raw: meta });
+        this.pending = this.pending.slice(meta.length);
         continue;
       }
 

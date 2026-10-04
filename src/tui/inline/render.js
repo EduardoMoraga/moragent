@@ -158,7 +158,7 @@ function composerLines(ui, cols, maxRows) {
   let cursorRow = 0;
   let first = true;
   for (const logical of marked.split('\n')) {
-    let rest = logical;
+    let rest = logical.replace(/\t/g, '  ');
     do {
       const prefix = first ? '> ' : '  ';
       const size = Math.max(1, inner - prefix.length);
@@ -210,8 +210,13 @@ export function renderLive(state = {}, ui = {}, { cols = 80, rows = 24 } = {}) {
   }
   out.push(...renderPicker(ui, state, w));
   out.push(...renderMenu(ui, state, w));
-  out.push(...composerLines(ui, w, Math.max(3, Math.floor(rows * 0.4))));
-  out.push(...controlsLines(state, w));
-  out.push(statusLine(state, ui, w));
-  return out.flatMap((l) => width(l) <= w ? [l] : wrapText(l, w));
+  const fit = (lines) => lines.flatMap((l) => width(l) <= w ? [l] : wrapText(l, w));
+  const footer = fit([...controlsLines(state, w), statusLine(state, ui, w)]);
+  const height = Math.max(1, (rows | 0) - 1);
+  const above = fit(out);
+  const room = height - footer.length - 2;
+  const composerRows = Math.max(1, Math.min(Math.floor(height * 0.4), Math.max(3, room - above.length), room));
+  const composer = composerLines(ui, w, composerRows);
+  const kept = Math.max(0, height - footer.length - composer.length);
+  return [...(kept ? above.slice(-kept) : []), ...composer, ...footer];
 }
