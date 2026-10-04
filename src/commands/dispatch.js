@@ -89,6 +89,7 @@ export default {
       ? `Read and execute .moragent/tasks/${task.id}.md`
       : `Lee y ejecuta .moragent/tasks/${task.id}.md`;
     let launch = null;
+    let execution = null;
     try {
       if (mux.name === 'headless') {
         const autonomy = pane?.mux === 'headless' ? pane.autonomy : member.autonomy;
@@ -100,12 +101,13 @@ export default {
         }
       } else {
         mux.send(pane.handle, prompt);
+        execution = { mode: 'pane', mux: mux.name, handle: pane.handle, provider: member.cli, updatedAt: nowISO() };
       }
     } catch (error) {
       updateTask(root, task.id, { status: 'failed', result: error.message });
       throw error;
     }
-    task = updateTask(root, task.id, { status: 'sent' });
+    task = updateTask(root, task.id, { status: 'sent', ...(execution ? { execution } : {}) });
     if (argv.flags.wait) {
       const waited = await waitForTasks(root, [task.id], { timeoutMs: parseDuration(argv.flags.timeout, 1800000) });
       task = waited.tasks[0];

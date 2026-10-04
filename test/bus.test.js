@@ -72,5 +72,7 @@ test('envelope includes mission, spec, acceptance and exit protocol', async () =
   assert.match(text, /Criterios de aceptación/);
   assert.match(text, /mora(\.js)?['"]? done T-0001/);
   const file = await writeEnvelope({ root, task, config: cfg });
-  assert.equal(readText(file), text);
+  // Each build stamps the current second, so compare without the timestamp line.
+  const unstamped = (s) => s.replace(/^(Generated|Generado): .*$/m, '$1: <time>');
+  assert.equal(unstamped(readText(file)), unstamped(text));
 });

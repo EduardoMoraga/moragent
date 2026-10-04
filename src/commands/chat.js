@@ -11,12 +11,12 @@ export default {
   usage: 'moragent  ·  mora chat',
   async run(argv, ctx) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      throw new MoragentError('NO_TTY', t('La app necesita una terminal interactiva.', 'The app needs an interactive terminal.'), 'mora status · mora help');
+      throw new MoragentError('NO_TTY', t('La app necesita una terminal interactiva.', 'The app needs an interactive terminal.'), 'mora dashboard · mora help');
     }
     let tui;
     try { tui = await import('../tui/inline/index.js'); } catch (e) {
       if (e?.code !== 'ERR_MODULE_NOT_FOUND') throw e;
-      throw new MoragentError('NO_TUI', t('La interfaz todavía no está instalada.', 'The interface is not installed yet.'), 'mora status');
+      throw new MoragentError('NO_TUI', t('La interfaz todavía no está instalada.', 'The interface is not installed yet.'), 'mora dashboard');
     }
     const engine = await createEngine({ root: ctx.root, config: ctx.config });
     await engine.refreshProviders();

@@ -9,8 +9,9 @@ import { version } from '../cli.js';
 import { bannerSmall } from '../ui/banner.js';
 import { table } from '../ui/table.js';
 import { cliCatalog } from '../ui/clis.js';
+import { readStatus } from '../bus/status.js';
 
-const STATUSES = ['queued', 'sent', 'running', 'done', 'failed', 'blocked'];
+const STATUSES = ['queued', 'sent', 'running', 'done', 'failed', 'blocked', 'unknown'];
 const PLACEHOLDER = /^(Describe aquí|Describe the project goal)/;
 
 export function readGoal(root, cfg) {
@@ -74,7 +75,9 @@ async function activeSpec(root) {
 export function suggestNext({ tasks, panes, cfg, spec }) {
   const next = [];
   const blocked = (tasks.byStatus.blocked || 0) + (tasks.byStatus.failed || 0);
+  const unknown = tasks.byStatus.unknown || 0;
   const livePanes = Object.values(panes).filter((p) => p.alive !== false).length;
+  if (unknown) next.push({ cmd: 'mora status', why: t(`${unknown} tarea(s) necesitan inspección`, `${unknown} task(s) need inspection`) });
   if (blocked) next.push({ cmd: 'mora board', why: t(`${blocked} tarea(s) bloqueada(s) necesitan tu decisión`, `${blocked} blocked task(s) need your call`) });
   if (!tasks.total) next.push({ cmd: 'mora plan "…"', why: t('describe lo que quieres construir y MORAGENT arma el plan', 'describe what you want to build and MORAGENT sizes the plan') });
   else if (spec?.active && spec.active.phase && !['apply', 'verify', 'archive'].includes(spec.active.phase)) {
@@ -96,7 +99,7 @@ export async function collect(root) {
     const info = catalog.find((x) => x.id === m.cli);
     return { role, cli: m.cli, label: info?.label || m.cli, installed: !!info?.installed, install: info?.install || null, pane: panes[role] || null };
   });
-  const tasks = taskSummary(readTasks(root));
+  const tasks = taskSummary(readStatus(root, null, { config: cfg }).tasks);
   const spec = await activeSpec(root);
   const data = {
     ok: true, root, project: cfg.project, goal: readGoal(root, cfg), preset: cfg.preset, lang: cfg.lang,
@@ -134,6 +137,7 @@ function render(d) {
     tagCount(s.sent + s.running, t('en curso', 'in flight'), c.cyan),
     tagCount(s.done, t('listas', 'done'), c.green),
     tagCount(s.blocked + s.failed, t('bloqueadas', 'blocked'), c.red),
+    tagCount(s.unknown, t('desconocidas', 'unknown'), c.yellow),
   ].join(c.dim(' · '))}`);
   const m = d.memory;
   out(`${label(t('Memoria', 'Memory'))}${c.dim(t('canónica', 'canonical'))} ${m.canonical}  ${c.dim(t('episódica', 'episodic'))} ${m.episodic}  ${c.dim(t('transitoria', 'transient'))} ${m.transient}  ${c.dim('skills')} ${m.skills}`);
@@ -147,10 +151,10 @@ function render(d) {
 
 export default {
   name: 'dashboard',
-  aliases: ['status', 'st'],
+  aliases: [],
   group: 'start',
   summary: { es: 'Estado del proyecto: equipo, tareas, memoria y siguiente paso', en: 'Project status: crew, tasks, memory and next step' },
-  usage: 'mora [dashboard|status] [--json]',
+  usage: 'mora dashboard [--json]',
   async run(argv, ctx) {
     const root = ctx.root || requireRoot();
     const data = await collect(root);

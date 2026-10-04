@@ -2,7 +2,7 @@
 export const COMMANDS = [
   'chat', 'init', 'sync', 'help', 'config',
   // crew (backend)
-  'up', 'down', 'trust', 'dispatch', 'resend', 'task', 'done', 'block', 'wait', 'crew', 'board', 'plan',
+  'up', 'down', 'trust', 'dispatch', 'resend', 'task', 'status', 'done', 'block', 'wait', 'crew', 'board', 'plan',
   // memory + brain (helper)
   'memory', 'context', 'brain',
   // spec (dev)
