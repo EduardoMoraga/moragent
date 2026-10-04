@@ -29,13 +29,13 @@ irm https://raw.githubusercontent.com/EduardoMoraga/moragent/master/install.ps1 
 
 <sub>Prefer npm? `npm i -g https://github.com/EduardoMoraga/moragent/archive/refs/heads/master.tar.gz` · try without installing: `npx github:EduardoMoraga/moragent`</sub>
 
-Then, inside any repo:
+Then, inside any repo, open an interactive terminal and run:
 
 ```sh
-moragent
+mora  # or: moragent
 ```
 
-Node ≥ 18, zero npm dependencies. If the folder has no `.moragent/` yet, the app runs project initialization inline right inside the terminal.
+Both names open the conversational MORAGENT harness. Run `mora help` to list explicit commands; use those commands in scripts. A no-argument launch without an interactive terminal exits with an error instead of showing a dashboard. Node ≥ 18, zero npm dependencies. If the folder has no `.moragent/` yet, the app runs project initialization inline right inside the terminal.
 
 ---
 
@@ -54,7 +54,7 @@ $ moragent
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Launch `moragent`** in your project terminal. You land directly inside a full-screen, native harness.
+1. **Launch `mora` or `moragent`** in your project terminal. You land directly inside the conversational harness.
 2. **Type `/login`** to see detected subscription CLIs (already logged in or hints to log in) and manage API keys or local Ollama.
 3. **Talk to the executive orchestrator** in plain language. It explores your repo, scopes features, and derives a concrete plan.
 4. **Subagents run inside the app**, streamed directly into the session. You track progress in real time in the sidebar. If you want to interact directly with any agent in its own terminal pane, type `/open <role|id>` (e.g. `/open backend`) to pop it out into Orca, herdr, or tmux.
