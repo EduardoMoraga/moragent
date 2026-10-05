@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { renderLive, renderFinal, filterCommands, visualRows } from '../src/tui/inline/render.js';
+import { InlineInputDecoder } from '../src/tui/inline/input.js';
 import { runInline } from '../src/tui/inline/index.js';
 import { plain } from '../src/core/log.js';
 import { sampleState } from './fixtures/fake-engine.js';
@@ -28,6 +29,182 @@ test('renderFinal wraps markdown in 60 and 120 cols', () => {
     assert.ok(lines.every((l) => plain(l).length <= cols));
     assert.ok(!plain(lines.join('\n')).includes('**'));
   }
+});
+
+test('inline composer shows the complete wrapped draft and editing cursor', () => {
+  const draft = `START ${'long prompt '.repeat(12)} END`;
+  const lines = renderLive(sampleState(), { input: draft, cursor: draft.length - 4 }, { cols: 42 });
+  const visible = plain(lines.join('\n'));
+  assert.ok(lines.every((line) => plain(line).length <= 42));
+  assert.ok(visible.includes('START'));
+  assert.ok(visible.includes('_ END'));
+  assert.ok(lines.filter((line) => plain(line).startsWith('│')).length > 1);
+  assert.ok(!visible.includes('…'));
+  assert.ok(visible.includes('Enter'));
+  assert.ok(visible.includes('Ctrl+J'));
+  assert.ok(visible.includes('Ctrl+C'));
+  assert.ok(visible.includes('/help'));
+});
+
+test('very long drafts keep the cursor in a bounded visible viewport', () => {
+  const draft = `START ${'long prompt '.repeat(300)} END`;
+  const bottom = renderLive(sampleState(), { input: draft, cursor: draft.length }, { cols: 42, rows: 24 });
+  assert.ok(bottom.length <= 17);
+  assert.ok(plain(bottom.join('\n')).includes('END_'));
+  assert.ok(plain(bottom.join('\n')).includes('↑'));
+
+  const top = renderLive(sampleState(), { input: draft, cursor: 0 }, { cols: 42, rows: 24 });
+  assert.ok(plain(top.join('\n')).includes('> _START'));
+  assert.ok(plain(top.join('\n')).includes('↓'));
+});
+
+test('composer wraps astral characters without splitting surrogate pairs', () => {
+  const draft = `${'a'.repeat(35)}${'🧭'.repeat(20)}`;
+  const lines = renderLive(sampleState(), { input: draft, cursor: draft.length }, { cols: 42, rows: 40 });
+  const text = plain(lines.join('\n'));
+  assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text));
+  assert.equal((text.match(/🧭/g) || []).length, 20);
+});
+
+test('inline input decoder preserves split UTF-8 and distinguishes Shift+Enter from send', () => {
+  const decoder = new InlineInputDecoder();
+  const emoji = Buffer.from('🧭');
+  assert.deepEqual(decoder.push(emoji.subarray(0, 2)), []);
+  assert.deepEqual(decoder.push(emoji.subarray(2)), [{ name: 'text', value: '🧭' }]);
+  assert.deepEqual(decoder.push('\x1b[13;2u'), [{ name: 'newline' }]);
+  assert.deepEqual(decoder.push('\r'), [{ name: 'enter' }]);
+});
+
+test('inline input decoder treats Meta chords as keys, never as a draft-clearing Escape', () => {
+  const decoder = new InlineInputDecoder();
+  assert.deepEqual(decoder.push('\x1b\x7f'), [{ name: 'unknown', raw: '\x1b\x7f' }]);
+  assert.deepEqual(decoder.push('\x1b\r'), [{ name: 'newline' }]);
+  assert.deepEqual(decoder.push('\x1bd'), [{ name: 'unknown', raw: '\x1bd' }]);
+  assert.deepEqual(decoder.push('\x1bb'), [{ name: 'word-left' }]);
+  assert.deepEqual(decoder.push('\x1b'), []);
+  assert.deepEqual(decoder.flushEscape(), [{ name: 'escape' }]);
+  assert.deepEqual(decoder.push('\x1b'), []);
+  assert.deepEqual(decoder.push('/'), [{ name: 'unknown', raw: '\x1b/' }]);
+  assert.deepEqual(decoder.push('\x1b'), []);
+  assert.deepEqual(decoder.push('\x7f'), [{ name: 'unknown', raw: '\x1b\x7f' }]);
+  assert.deepEqual(decoder.push('\x1b'), []);
+  assert.deepEqual(decoder.push('\r'), [{ name: 'newline' }]);
+});
+
+test('live region stays within terminal height while streaming with agents and a long draft', () => {
+  const state = sampleState();
+  state.messages.push({ id: 'live', from: 'orchestrator', streaming: true, text: Array.from({ length: 20 }, (_, i) => `stream line ${i}`).join('\n\n') });
+  for (let i = 0; i < 3; i++) state.agents[`a${i}`] = { id: `T-${i}`, role: 'backend', provider: 'codex', status: 'running', taskId: `T-${i}`, log: [{ kind: 'text', text: 'working' }] };
+  const draft = `START ${'long prompt '.repeat(300)} END`;
+  for (const rows of [12, 24, 40]) {
+    const lines = renderLive(state, { input: draft, cursor: draft.length, showAgents: true }, { cols: 42, rows });
+    assert.ok(visualRows(lines, 42) < rows, `rows=${rows} got ${visualRows(lines, 42)}`);
+    assert.ok(plain(lines.join('\n')).includes('END_'));
+  }
+});
+
+test('inline typing and redraw preserve draft; paste and newline do not send', async () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value) => { input.isRaw = value; };
+  const output = new PassThrough();
+  output.isTTY = true;
+  output.columns = 48;
+  output.rows = 24;
+  let written = '';
+  output.write = (chunk) => { written += String(chunk); return true; };
+  const store = new EventEmitter();
+  store.state = sampleState();
+  const sent = [];
+  const engine = { store, async send(value) { sent.push(value); }, async command() {}, stop() {} };
+  const done = runInline({ engine, input, output });
+
+  input.write('ordinary draft');
+  store.state.messages.push({ id: 'status', from: 'system', text: 'status changed' });
+  store.emit('change');
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.ok(plain(written.slice(written.lastIndexOf('\x1b[2K'))).includes('ordinary draft'));
+
+  input.write('\x1b[200~first line\r\nsecond line\x1b[201~');
+  input.write('\nthird line');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual(sent, []);
+  let visible = plain(written.slice(written.lastIndexOf('\x1b[2K')));
+  assert.ok(visible.includes('first line'));
+  assert.ok(visible.includes('second line'));
+  assert.ok(visible.includes('third line'));
+
+  output.columns = 36;
+  output.emit('resize');
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  visible = plain(written.slice(written.lastIndexOf('\x1b[2K')));
+  assert.ok(visible.includes('ordinary draft'));
+  assert.ok(visible.includes('third line'));
+  assert.deepEqual(sent, []);
+
+  input.write('\r');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual(sent, ['ordinary draftfirst line\nsecond line\nthird line']);
+  input.write('\x03');
+  await done;
+  assert.equal(input.isRaw, false);
+  assert.ok(written.includes('\x1b[?2004h'));
+  assert.ok(written.includes('\x1b[?2004l'));
+});
+
+test('split bracketed paste markers keep a multiline draft editable', async () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.setRawMode = () => {};
+  const output = new PassThrough();
+  output.isTTY = true;
+  output.columns = 60;
+  let written = '';
+  output.write = (chunk) => { written += String(chunk); return true; };
+  const store = new EventEmitter();
+  store.state = sampleState();
+  const sent = [];
+  const done = runInline({ engine: { store, async send(value) { sent.push(value); }, stop() {} }, input, output });
+  input.write('\x1b[20');
+  input.write('0~alpha\nbe');
+  input.write('ta\x1b[20');
+  input.write('1~');
+  assert.deepEqual(sent, []);
+  assert.ok(plain(written.slice(written.lastIndexOf('\x1b[2K'))).includes('beta'));
+  input.write('\r');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(sent, ['alpha\nbeta']);
+  input.write('\x03');
+  await done;
+});
+
+test('pasted tabs survive draft editing and send unchanged', async () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.setRawMode = () => {};
+  const output = new PassThrough();
+  output.isTTY = true;
+  output.columns = 60;
+  let written = '';
+  output.write = (chunk) => { written += String(chunk); return true; };
+  const store = new EventEmitter();
+  store.state = sampleState();
+  const sent = [];
+  const done = runInline({ engine: { store, async send(value) { sent.push(value); }, stop() {} }, input, output });
+  input.write('\x1b[200~name\tqty\nfoo\t2\x1b[201~');
+  input.write('X\x7f');
+  input.write('\x1b');
+  input.write('\x7f');
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const visible = plain(written.slice(written.lastIndexOf('\x1b[2K')));
+  assert.ok(visible.includes('name  qty'));
+  assert.ok(!visible.includes('\t'));
+  input.write('\r');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(sent, ['name\tqty\nfoo\t2']);
+  input.write('\x03');
+  await done;
 });
 
 test('runInline prints updated message once when it becomes final and picker navigates', async () => {
@@ -56,6 +233,7 @@ test('runInline prints updated message once when it becomes final and picker nav
   assert.ok(plain(written).includes('/tarea'));
   assert.deepEqual(calls, []);
   input.write('\u001b');
+  await new Promise((r) => setTimeout(r, 60));
   input.write('/tarea\r');
   await new Promise((r) => setTimeout(r, 30));
   assert.ok(plain(written).includes('rol para /tarea'));
@@ -67,4 +245,69 @@ test('runInline prints updated message once when it becomes final and picker nav
   input.write('\u0003'); // second one exits
   await p;
   assert.equal(input.isRaw, false);
+});
+
+// Minimal tmux-like screen: clearing to end of screen from the home position moves the
+// visible screen into history (tmux scroll-on-clear), and shrinking the height pushes the
+// rows above the cursor into history.
+function virtualTerminal(rows) {
+  const term = { rows, screen: Array.from({ length: rows }, () => ''), cx: 0, cy: 0, history: 0 };
+  const scroll = () => { term.history += 1; term.screen.shift(); term.screen.push(''); };
+  term.write = (data) => {
+    for (let i = 0; i < data.length; i += 1) {
+      const ch = data[i];
+      if (ch === '\x1b' && data[i + 1] === '[') {
+        const m = /^\x1b\[([?\d;]*)([A-Za-z~])/.exec(data.slice(i));
+        if (!m) continue;
+        i += m[0].length - 1;
+        const n = Number(m[1]) || 0;
+        if (m[2] === 'A') term.cy = Math.max(0, term.cy - (n || 1));
+        else if (m[2] === 'K' && n === 2) term.screen[term.cy] = '';
+        else if (m[2] === 'J') {
+          if (term.cx === 0 && term.cy === 0) term.history += term.screen.filter(Boolean).length;
+          term.screen[term.cy] = term.screen[term.cy].slice(0, term.cx);
+          for (let r = term.cy + 1; r < term.rows; r += 1) term.screen[r] = '';
+        }
+      } else if (ch === '\r') term.cx = 0;
+      else if (ch === '\n') { term.cx = 0; if (term.cy === term.rows - 1) scroll(); else term.cy += 1; }
+      else { term.screen[term.cy] = term.screen[term.cy].padEnd(term.cx).slice(0, term.cx) + ch; term.cx += 1; }
+    }
+  };
+  term.resize = (next) => {
+    while (term.rows > next) {
+      if (term.cy < term.rows - 1 && !term.screen[term.rows - 1]) term.screen.pop();
+      else { term.history += 1; term.screen.shift(); term.cy -= 1; }
+      term.rows -= 1;
+    }
+  };
+  return term;
+}
+
+test('redraws after shrinking the terminal height keep native scrollback clean', async () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.setRawMode = () => {};
+  const output = new PassThrough();
+  output.isTTY = true;
+  output.columns = 40;
+  output.rows = 14;
+  const term = virtualTerminal(14);
+  output.write = (chunk) => { term.write(String(chunk)); return true; };
+  const store = new EventEmitter();
+  store.state = sampleState();
+  const done = runInline({ engine: { store, async send() {}, stop() {} }, input, output });
+  input.write('a long draft that wraps across several composer rows '.repeat(3));
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  term.resize(10);
+  output.rows = 10;
+  output.emit('resize');
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const history = term.history;
+  for (let i = 0; i < 10; i += 1) input.write('x');
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(term.history, history);
+  input.write('\x03');
+  input.write('\x03');
+  await done;
 });
